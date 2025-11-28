@@ -36,7 +36,8 @@ class OverlayViewModel: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
+            guard let self = self else { return }
+            Task { @MainActor [weak self] in
                 self?.loadItems()
             }
         }
