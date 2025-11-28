@@ -14,27 +14,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS 13 Ventura - Intel (native)
+          # macOS 13 Ventura - Intel (free runner)
           - macos: "13"
             runner: macos-13
             arch: x64
-          # macOS 13 Ventura - Apple Silicon (large runner)
-          - macos: "13"
-            runner: macos-13-xlarge
-            arch: arm64
-          # macOS 14 Sonoma - Intel (large runner)
-          - macos: "14"
-            runner: macos-14-large
-            arch: x64
-          # macOS 14 Sonoma - Apple Silicon (native)
+          # macOS 14 Sonoma - Apple Silicon (free runner)
           - macos: "14"
             runner: macos-14
             arch: arm64
-          # macOS 15 Sequoia - Intel (large runner)
-          - macos: "15"
-            runner: macos-15-large
-            arch: x64
-          # macOS 15 Sequoia - Apple Silicon (native)
+          # macOS 15 Sequoia - Apple Silicon (free runner)
           - macos: "15"
             runner: macos-15
             arch: arm64
