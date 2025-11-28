@@ -1,0 +1,81 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+xcuserdata/
+*.xcworkspace
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/
+DerivedData/
+build/
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Code coverage
+*.gcno
+*.gcda
+*.profdata
+*.profraw
+
+# App data (SQLite database files)
+*.db
+*.db-shm
+*.db-wal
+blobs/
+
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Editor files
+*.swp
+*.swo
+*~
+*.orig
+*.bak
+
+# IDE
+.idea/
+*.sublime-workspace
+*.sublime-project
+.vscode/
+.history/
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+
+# Archives
+*.zip
+*.tar.gz
+*.dmg
+
+# Crash logs
+*.crash
+*.ips
+
+# Signing
+*.p12
+*.mobileprovision
+*.cer
+
+# Claude Code
+.claude/
