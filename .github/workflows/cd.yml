@@ -1,0 +1,32 @@
+name: CD
+
+on:
+  workflow_dispatch:
+    inputs:
+      dryrun:
+        description: 'Dry run (skip actual release)'
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  # Run CI workflow first
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  # Release job (only runs after CI succeeds)
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Dry run
+        if: ${{ inputs.dryrun }}
+        run: echo "Dryrun executed"
+
+      - name: Release
+        if: ${{ !inputs.dryrun }}
+        run: echo "Release performed"
