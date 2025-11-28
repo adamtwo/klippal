@@ -79,3 +79,6 @@ blobs/
 
 # Claude Code
 .claude/
+
+# Local TODO files
+TODO-*.md

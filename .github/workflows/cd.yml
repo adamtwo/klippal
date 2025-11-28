@@ -170,30 +170,43 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Create release notes
-          cat > release-notes.md << 'EOF'
-          ## KlipPal ${{ inputs.version }}
+          # Generate changelog from commits since last release
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 
-          A clipboard manager for macOS.
+          if [ -n "$LAST_TAG" ]; then
+            echo "Generating changelog since $LAST_TAG..."
+            CHANGELOG=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s" --no-merges | grep -v "Generated with Claude Code" || true)
+          else
+            echo "No previous tag found, using recent commits..."
+            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges -20 | grep -v "Generated with Claude Code" || true)
+          fi
 
-          ### Installation
+          # Create release notes with changelog and installation instructions
+          cat > release-notes.md << EOF
+          ## What's Changed
+
+          ${CHANGELOG:-No significant changes}
+
+          ---
+
+          ## Installation
 
           **Homebrew (recommended):**
-          ```bash
+          \`\`\`bash
           brew install --cask klippal
-          ```
+          \`\`\`
 
           **Manual:**
-          1. Download `KlipPal-${{ inputs.version }}.dmg`
+          1. Download \`KlipPal-${{ inputs.version }}.dmg\`
           2. Open the DMG and drag KlipPal to Applications
           3. Launch KlipPal and grant Accessibility permission when prompted
 
-          ### Verification
+          ## Verification
 
           Verify the download integrity:
-          ```bash
+          \`\`\`bash
           shasum -a 256 -c KlipPal-${{ inputs.version }}.dmg.sha256
-          ```
+          \`\`\`
 
           This release is code signed and notarized by Apple.
           EOF
