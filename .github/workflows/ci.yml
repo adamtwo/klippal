@@ -15,14 +15,17 @@ jobs:
       matrix:
         include:
           # macOS 13 Ventura - Intel (free runner)
+          # Has Xcode 15.2 with Swift 5.9
           - macos: "13"
             runner: macos-13
             arch: x64
           # macOS 14 Sonoma - Apple Silicon (free runner)
+          # Has Xcode 16.x with Swift 5.10+
           - macos: "14"
             runner: macos-14
             arch: arm64
           # macOS 15 Sequoia - Apple Silicon (free runner)
+          # Has Xcode 16.x with Swift 6.x
           - macos: "15"
             runner: macos-15
             arch: arm64
@@ -30,11 +33,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup Swift
-        uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: "5.9"
 
       - name: Show Swift version
         run: swift --version
