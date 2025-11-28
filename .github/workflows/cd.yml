@@ -3,8 +3,12 @@ name: CD
 on:
   workflow_dispatch:
     inputs:
+      version:
+        description: 'Release version (e.g., 1.0.0)'
+        required: true
+        type: string
       dryrun:
-        description: 'Dry run (skip actual release)'
+        description: 'Dry run (skip notarization and release)'
         required: true
         default: true
         type: boolean
@@ -14,19 +18,191 @@ jobs:
   ci:
     uses: ./.github/workflows/ci.yml
 
-  # Release job (only runs after CI succeeds)
+  # Build, sign, notarize, and release
   release:
-    name: Release
-    runs-on: ubuntu-latest
+    name: Build and Release
+    runs-on: macos-14
     needs: ci
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Dry run
-        if: ${{ inputs.dryrun }}
-        run: echo "Dryrun executed"
+      - name: Show Swift version
+        run: swift --version
 
-      - name: Release
+      - name: Build Release
+        run: swift build -c release -v
+
+      - name: Create App Bundle
+        run: |
+          chmod +x scripts/create-app-bundle.sh
+          ./scripts/create-app-bundle.sh ${{ inputs.version }}
+
+      - name: Import Code Signing Certificate
         if: ${{ !inputs.dryrun }}
-        run: echo "Release performed"
+        env:
+          CERTIFICATE_P12_BASE64: ${{ secrets.DEVELOPER_ID_CERT_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+        run: |
+          # Create temporary keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Import certificate
+          CERT_PATH=$RUNNER_TEMP/certificate.p12
+          echo "$CERTIFICATE_P12_BASE64" | base64 --decode > "$CERT_PATH"
+
+          security import "$CERT_PATH" \
+              -P "$CERTIFICATE_PASSWORD" \
+              -A \
+              -t cert \
+              -f pkcs12 \
+              -k "$KEYCHAIN_PATH"
+
+          security set-key-partition-list \
+              -S apple-tool:,apple: \
+              -k "$KEYCHAIN_PASSWORD" \
+              "$KEYCHAIN_PATH"
+
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+          rm "$CERT_PATH"
+
+      - name: Code Sign Application
+        if: ${{ !inputs.dryrun }}
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          codesign --deep --force --verify --verbose \
+              --sign "Developer ID Application: $APPLE_TEAM_ID" \
+              --entitlements Sources/KlipPal/KlipPal.entitlements \
+              --options runtime \
+              KlipPal.app
+
+          # Verify signing
+          codesign --verify --verbose KlipPal.app
+
+      - name: Ad-hoc Sign (Dryrun)
+        if: ${{ inputs.dryrun }}
+        run: |
+          # Ad-hoc signing for testing (won't pass Gatekeeper)
+          codesign --deep --force --sign - KlipPal.app
+          echo "Ad-hoc signed (dryrun mode)"
+
+      - name: Create DMG
+        run: |
+          brew install create-dmg
+
+          # Create DMG with Applications symlink
+          create-dmg \
+            --volname "KlipPal" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "KlipPal.app" 175 175 \
+            --app-drop-link 425 175 \
+            "KlipPal-${{ inputs.version }}.dmg" \
+            "KlipPal.app" || true
+
+          # Fallback to simple DMG if create-dmg fails
+          if [ ! -f "KlipPal-${{ inputs.version }}.dmg" ]; then
+            hdiutil create -srcfolder KlipPal.app \
+                -volname "KlipPal" \
+                -format UDZO \
+                "KlipPal-${{ inputs.version }}.dmg"
+          fi
+
+          ls -la *.dmg
+
+      - name: Notarize DMG
+        if: ${{ !inputs.dryrun }}
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Submit for notarization
+          xcrun notarytool submit "KlipPal-${{ inputs.version }}.dmg" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_ID_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait
+
+          # Staple the notarization ticket
+          xcrun stapler staple "KlipPal-${{ inputs.version }}.dmg"
+
+          # Verify
+          xcrun stapler validate "KlipPal-${{ inputs.version }}.dmg"
+
+      - name: Calculate Checksum
+        run: |
+          shasum -a 256 "KlipPal-${{ inputs.version }}.dmg" > "KlipPal-${{ inputs.version }}.dmg.sha256"
+          cat "KlipPal-${{ inputs.version }}.dmg.sha256"
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: KlipPal-${{ inputs.version }}
+          path: |
+            KlipPal-${{ inputs.version }}.dmg
+            KlipPal-${{ inputs.version }}.dmg.sha256
+
+      - name: Dryrun Summary
+        if: ${{ inputs.dryrun }}
+        run: |
+          echo "::notice::Dryrun executed"
+          echo ""
+          echo "=== Dryrun Summary ==="
+          echo "Version: ${{ inputs.version }}"
+          echo "DMG created: KlipPal-${{ inputs.version }}.dmg"
+          echo "DMG size: $(du -h KlipPal-${{ inputs.version }}.dmg | cut -f1)"
+          echo ""
+          echo "To perform actual release:"
+          echo "1. Configure GitHub secrets (DEVELOPER_ID_CERT_BASE64, etc.)"
+          echo "2. Run workflow with dryrun=false"
+
+      - name: Create GitHub Release
+        if: ${{ !inputs.dryrun }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Create release notes
+          cat > release-notes.md << 'EOF'
+          ## KlipPal ${{ inputs.version }}
+
+          A clipboard manager for macOS.
+
+          ### Installation
+
+          **Homebrew (recommended):**
+          ```bash
+          brew install --cask klippal
+          ```
+
+          **Manual:**
+          1. Download `KlipPal-${{ inputs.version }}.dmg`
+          2. Open the DMG and drag KlipPal to Applications
+          3. Launch KlipPal and grant Accessibility permission when prompted
+
+          ### Verification
+
+          Verify the download integrity:
+          ```bash
+          shasum -a 256 -c KlipPal-${{ inputs.version }}.dmg.sha256
+          ```
+
+          This release is code signed and notarized by Apple.
+          EOF
+
+          # Create release
+          gh release create "v${{ inputs.version }}" \
+              --title "KlipPal ${{ inputs.version }}" \
+              --notes-file release-notes.md \
+              "KlipPal-${{ inputs.version }}.dmg" \
+              "KlipPal-${{ inputs.version }}.dmg.sha256"
+
+          echo "::notice::Release performed - https://github.com/${{ github.repository }}/releases/tag/v${{ inputs.version }}"
