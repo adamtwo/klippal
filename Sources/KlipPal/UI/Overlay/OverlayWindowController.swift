@@ -41,7 +41,8 @@ class OverlayWindowController: NSWindowController {
         panel.titlebarAppearsTransparent = true
         panel.titleVisibility = .hidden
         panel.isMovableByWindowBackground = true
-        panel.backgroundColor = .clear
+        panel.backgroundColor = NSColor.windowBackgroundColor
+        panel.isOpaque = true
         panel.hasShadow = true
         panel.isReleasedWhenClosed = false
 
