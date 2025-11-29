@@ -99,22 +99,20 @@ struct OverlayView: View {
                                     item: item,
                                     isSelected: index == viewModel.selectedIndex,
                                     highlightRanges: viewModel.matchedRanges(at: index),
-                                    thumbnailImage: viewModel.thumbnail(for: item)
-                                )
-                                .id(item.id)
-                                .contentShape(Rectangle())
-                                .onTapGesture(count: 2) {
-                                    // Double-click: copy, close, and paste
-                                    viewModel.selectedIndex = index
-                                    pasteItem(item)
-                                }
-                                .simultaneousGesture(
-                                    TapGesture(count: 1).onEnded {
+                                    thumbnailImage: viewModel.thumbnail(for: item),
+                                    onDelete: { viewModel.deleteItem(item) },
+                                    onSingleClick: {
                                         // Single-click: just select and copy
                                         viewModel.selectedIndex = index
                                         copyToClipboard(item)
+                                    },
+                                    onDoubleClick: {
+                                        // Double-click: copy, close, and paste
+                                        viewModel.selectedIndex = index
+                                        pasteItem(item)
                                     }
                                 )
+                                .id(item.id)
                             }
                         }
                     }

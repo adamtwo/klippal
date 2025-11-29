@@ -6,103 +6,132 @@ struct ClipboardItemRowView: View {
     let isSelected: Bool
     let highlightRanges: [NSRange]
     let thumbnailImage: NSImage?
+    var onDelete: (() -> Void)?
+    var onSingleClick: (() -> Void)?
+    var onDoubleClick: (() -> Void)?
 
-    init(item: ClipboardItem, isSelected: Bool, highlightRanges: [NSRange] = [], thumbnailImage: NSImage? = nil) {
+    init(item: ClipboardItem, isSelected: Bool, highlightRanges: [NSRange] = [], thumbnailImage: NSImage? = nil, onDelete: (() -> Void)? = nil, onSingleClick: (() -> Void)? = nil, onDoubleClick: (() -> Void)? = nil) {
         self.item = item
         self.isSelected = isSelected
         self.highlightRanges = highlightRanges
         self.thumbnailImage = thumbnailImage
+        self.onDelete = onDelete
+        self.onSingleClick = onSingleClick
+        self.onDoubleClick = onDoubleClick
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            // Icon or Thumbnail - all same size (60x60)
-            if item.contentType == .image, let thumbnail = thumbnailImage {
-                Image(nsImage: thumbnail)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 60, height: 60)
-                    .cornerRadius(4)
-                    .overlay(
+            // Clickable content area (excludes delete button)
+            HStack(alignment: .top, spacing: 12) {
+                // Icon or Thumbnail - all same size (60x60)
+                if item.contentType == .image, let thumbnail = thumbnailImage {
+                    Image(nsImage: thumbnail)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 60, height: 60)
+                        .cornerRadius(4)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                        )
+                } else {
+                    // Large icon for all content types
+                    ZStack {
                         RoundedRectangle(cornerRadius: 4)
-                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                    )
-            } else {
-                // Large icon for all content types
-                ZStack {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(iconBackgroundColor)
-                    Image(systemName: iconForContentType)
-                        .font(.system(size: 24))
-                        .foregroundColor(iconColor)
+                            .fill(iconBackgroundColor)
+                        Image(systemName: iconForContentType)
+                            .font(.system(size: 24))
+                            .foregroundColor(iconColor)
+                    }
+                    .frame(width: 60, height: 60)
                 }
-                .frame(width: 60, height: 60)
-            }
 
-            VStack(alignment: .leading, spacing: 4) {
-                // Content preview with highlighting
-                if item.contentType == .image {
-                    // For images, show dimensions/metadata instead of preview
-                    Text(item.content)
+                VStack(alignment: .leading, spacing: 4) {
+                    // Content preview with highlighting
+                    if item.contentType == .image {
+                        // For images, show dimensions/metadata instead of preview
+                        Text(item.content)
+                            .font(.system(size: 13))
+                            .foregroundColor(.primary)
+                            .lineLimit(2)
+                    } else if item.contentType == .url {
+                        // For URLs, show the full URL with highlighting
+                        HighlightedText(
+                            item.content,
+                            highlightRanges: adjustedRanges,
+                            highlightColor: .accentColor,
+                            lineLimit: 3
+                        )
+                        .font(.system(size: 13))
+                        .foregroundColor(.purple)
+                    } else {
+                        HighlightedText(
+                            item.preview,
+                            highlightRanges: adjustedRanges,
+                            highlightColor: .accentColor,
+                            lineLimit: 3
+                        )
                         .font(.system(size: 13))
                         .foregroundColor(.primary)
-                        .lineLimit(2)
-                } else if item.contentType == .url {
-                    // For URLs, show the full URL with highlighting
-                    HighlightedText(
-                        item.content,
-                        highlightRanges: adjustedRanges,
-                        highlightColor: .accentColor,
-                        lineLimit: 3
-                    )
-                    .font(.system(size: 13))
-                    .foregroundColor(.purple)
-                } else {
-                    HighlightedText(
-                        item.preview,
-                        highlightRanges: adjustedRanges,
-                        highlightColor: .accentColor,
-                        lineLimit: 3
-                    )
-                    .font(.system(size: 13))
-                    .foregroundColor(.primary)
-                }
-
-                // Metadata
-                HStack(spacing: 8) {
-                    Text(item.timestamp.formatted(.relative(presentation: .named)))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    if let appName = item.sourceApp {
-                        Text("•")
-                            .foregroundColor(.secondary)
-                            .font(.caption)
-
-                        Text(appName)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
                     }
 
-                    // Show character count if content is truncated
-                    if item.isTruncated {
-                        Text("•")
+                    // Metadata
+                    HStack(spacing: 8) {
+                        Text(item.timestamp.formatted(.relative(presentation: .named)))
+                            .font(.caption)
                             .foregroundColor(.secondary)
-                            .font(.caption)
 
-                        Text(item.formattedCharacterCount)
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                    }
+                        if let appName = item.sourceApp {
+                            Text("•")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
 
-                    Spacer()
+                            Text(appName)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
 
-                    if item.isFavorite {
-                        Image(systemName: "star.fill")
-                            .font(.caption)
-                            .foregroundColor(.yellow)
+                        // Show character count if content is truncated
+                        if item.isTruncated {
+                            Text("•")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+
+                            Text(item.formattedCharacterCount)
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+
+                        Spacer()
+
+                        if item.isFavorite {
+                            Image(systemName: "star.fill")
+                                .font(.caption)
+                                .foregroundColor(.yellow)
+                        }
                     }
                 }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) {
+                onDoubleClick?()
+            }
+            .simultaneousGesture(
+                TapGesture(count: 1).onEnded {
+                    onSingleClick?()
+                }
+            )
+
+            // Delete button - always visible on right side (outside clickable area)
+            if let onDelete = onDelete {
+                Button(action: onDelete) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.secondary.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+                .help("Delete from history")
             }
         }
         .padding(12)

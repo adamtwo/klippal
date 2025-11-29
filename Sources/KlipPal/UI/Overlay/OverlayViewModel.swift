@@ -158,4 +158,25 @@ class OverlayViewModel: ObservableObject {
     func closeWindow() {
         onCloseWindow?()
     }
+
+    /// Delete an item from history
+    func deleteItem(_ item: ClipboardItem) {
+        Task {
+            do {
+                try await storage.delete(item)
+                print("🗑️ Deleted item: \(item.content.prefix(50))...")
+
+                // Remove from local arrays
+                items.removeAll { $0.id == item.id }
+                filteredItems.removeAll { $0.id == item.id }
+
+                // Adjust selected index if needed
+                if selectedIndex >= filteredItems.count {
+                    selectedIndex = max(0, filteredItems.count - 1)
+                }
+            } catch {
+                print("❌ Failed to delete item: \(error)")
+            }
+        }
+    }
 }
