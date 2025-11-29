@@ -2,19 +2,27 @@
 set -euo pipefail
 
 # Create macOS .app bundle from Swift Package Manager build
-# Usage: ./scripts/create-app-bundle.sh [version]
+# Usage: ./scripts/create-app-bundle.sh [version] [arch]
+# arch: arm64 or x86_64 (optional, defaults to native arch)
 
 VERSION="${1:-1.0.0}"
+ARCH="${2:-}"
 APP_NAME="KlipPal"
 BUNDLE_DIR="${APP_NAME}.app"
-BUILD_DIR=".build/release"
 
-echo "Creating ${APP_NAME}.app bundle (version ${VERSION})..."
+# Determine build directory based on architecture
+if [ -n "$ARCH" ]; then
+    BUILD_DIR=".build/${ARCH}-apple-macosx/release"
+else
+    BUILD_DIR=".build/release"
+fi
+
+echo "Creating ${APP_NAME}.app bundle (version ${VERSION}, arch: ${ARCH:-native})..."
 
 # Ensure release build exists
 if [ ! -f "${BUILD_DIR}/${APP_NAME}" ]; then
     echo "Error: Release binary not found at ${BUILD_DIR}/${APP_NAME}"
-    echo "Run 'swift build -c release' first"
+    echo "Run 'swift build -c release --arch ${ARCH:-arm64}' first"
     exit 1
 fi
 
@@ -48,6 +56,7 @@ fi
 
 echo "Created ${BUNDLE_DIR}"
 echo "  Version: ${VERSION}"
+echo "  Architecture: ${ARCH:-native}"
 echo "  Size: $(du -sh "${BUNDLE_DIR}" | cut -f1)"
 
 # Verify bundle structure
@@ -55,3 +64,8 @@ echo ""
 echo "Bundle contents:"
 ls -la "${BUNDLE_DIR}/Contents/"
 ls -la "${BUNDLE_DIR}/Contents/MacOS/"
+
+# Show binary architecture
+echo ""
+echo "Binary architecture:"
+file "${BUNDLE_DIR}/Contents/MacOS/${APP_NAME}"
