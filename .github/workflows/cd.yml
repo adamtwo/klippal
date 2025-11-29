@@ -75,10 +75,12 @@ jobs:
       - name: Code Sign Application
         if: ${{ !inputs.dryrun }}
         env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
         run: |
+          # SIGNING_IDENTITY should be the full certificate name, e.g.:
+          # "Developer ID Application: Your Name (ABC123XYZ)"
           codesign --deep --force --verify --verbose \
-              --sign "Developer ID Application: $APPLE_TEAM_ID" \
+              --sign "Developer ID Application: $SIGNING_IDENTITY" \
               --entitlements Sources/KlipPal/KlipPal.entitlements \
               --options runtime \
               KlipPal.app
