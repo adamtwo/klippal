@@ -163,4 +163,9 @@ extension OverlayWindowController: NSWindowDelegate {
     func windowDidEndLiveResize(_ notification: Notification) {
         saveWindowSize()
     }
+
+    func windowDidResignKey(_ notification: Notification) {
+        // Close the overlay when it loses focus
+        closeWindow()
+    }
 }
