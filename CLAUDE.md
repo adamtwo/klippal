@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Development Rules
+
+**IMPORTANT - Follow these rules for all feature development:**
+
+1. **Tests First**: Always write tests before implementing features
+   - Write unit tests for business logic
+   - Write integration tests involving UI where applicable
+   - Run tests to verify they fail first, then implement
+
+2. **No Auto-Commit**: Do NOT commit and push unless explicitly told to do so
+
 ## Project Overview
 
 **KlipPal** is a native macOS clipboard manager built with Swift and SwiftUI. It monitors the system clipboard, stores history locally (no cloud sync), and provides instant search/access through a global hotkey overlay.
