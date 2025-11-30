@@ -148,7 +148,6 @@ struct StorageSettingsView: View {
 
 struct AboutView: View {
     private let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
-    private let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
 
     var body: some View {
         VStack(spacing: 16) {
@@ -161,23 +160,31 @@ struct AboutView: View {
                 .font(.title)
                 .fontWeight(.semibold)
 
-            Text("Version \(appVersion) (\(buildNumber))")
+            Text("Version \(appVersion)")
                 .font(.caption)
                 .foregroundColor(.secondary)
 
-            Text("A native macOS clipboard manager")
+            Text("A privacy-first clipboard manager - keeping your clipboard history local and secure. No cloud sync, no telemetry.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 300)
+                .fixedSize(horizontal: false, vertical: true)
 
             Divider()
                 .padding(.horizontal, 40)
 
-            VStack(spacing: 4) {
-                Text("Local-only clipboard history")
-                Text("No cloud sync, no telemetry")
+            VStack(spacing: 8) {
+                Text("Copyright 2025 KlipPal. All rights reserved.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                HStack(spacing: 16) {
+                    Link("Website", destination: URL(string: "https://klippal.app")!)
+                    Link("MIT License", destination: URL(string: "https://github.com/adamtwo/klippal/blob/main/LICENSE")!)
+                }
+                .font(.caption)
             }
-            .font(.caption)
-            .foregroundColor(.secondary)
 
             Spacer()
         }
