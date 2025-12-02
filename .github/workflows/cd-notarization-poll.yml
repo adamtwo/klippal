@@ -211,8 +211,15 @@ jobs:
           echo "All notarizations complete! Triggering finalize workflow..."
 
           gh api "repos/${{ github.repository }}/dispatches" \
-            -f event_type=notarization-complete \
-            -f "client_payload={\"build_run_id\":\"${{ matrix.run_id }}\",\"version\":\"${{ steps.state.outputs.version }}\"}"
+            --input - <<EOF
+          {
+            "event_type": "notarization-complete",
+            "client_payload": {
+              "build_run_id": "${{ matrix.run_id }}",
+              "version": "${{ steps.state.outputs.version }}"
+            }
+          }
+          EOF
 
           echo "::notice::Triggered cd-finalize workflow for version ${{ steps.state.outputs.version }}"
 
