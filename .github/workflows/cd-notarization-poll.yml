@@ -2,8 +2,8 @@ name: CD Notarization Poll
 
 on:
   schedule:
-    # Run every 15 minutes
-    - cron: '*/15 * * * *'
+    # Run every 2 hours
+    - cron: '0 */2 * * *'
   workflow_dispatch:
     inputs:
       build_run_id:
@@ -259,4 +259,4 @@ jobs:
           echo "**Version:** ${{ steps.state.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "**Build Run ID:** ${{ matrix.run_id }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Will check again in 15 minutes." >> $GITHUB_STEP_SUMMARY
+          echo "Will check again in 2 hours." >> $GITHUB_STEP_SUMMARY

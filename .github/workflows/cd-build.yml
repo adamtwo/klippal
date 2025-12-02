@@ -269,4 +269,4 @@ jobs:
           echo "| arm64 | \`${{ steps.submit.outputs.arm64_uuid }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| x86_64 | \`${{ steps.submit.outputs.x86_64_uuid }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Polling will check status every 15 minutes automatically." >> $GITHUB_STEP_SUMMARY
+          echo "Polling will check status every 2 hours automatically." >> $GITHUB_STEP_SUMMARY
