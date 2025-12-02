@@ -1,26 +1,21 @@
-name: CD (Disabled - Use cd-build.yml)
-
-# DISABLED: This workflow has been replaced by the async notarization architecture:
-# - cd-build.yml: Build, sign, and submit for notarization
-# - cd-notarization-poll.yml: Poll notarization status every 15 minutes
-# - cd-finalize.yml: Staple and create release when notarization completes
+name: CD Build
 
 on:
-  # workflow_dispatch disabled - uncomment to re-enable
-  # workflow_dispatch:
-  #   inputs:
-  #     version:
-  #       description: 'Release version (e.g., 1.0.0)'
-  #       required: true
-  #       type: string
-  #     dryrun:
-  #       description: 'Dry run (skip notarization and release)'
-  #       required: true
-  #       default: true
-  #       type: boolean
-  push:
-    branches:
-      - disabled  # Never triggers - workflow is disabled
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 1.0.0)'
+        required: true
+        type: string
+      dryrun:
+        description: 'Dry run (skip notarization and release)'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  actions: write
+  contents: write
 
 jobs:
   # Run CI workflow first
@@ -56,9 +51,9 @@ jobs:
           name: KlipPal-${{ matrix.arch }}-app
           path: KlipPal.app
 
-  # Sign, notarize, package DMGs, and release
-  release:
-    name: Sign and Release
+  # Sign and submit for notarization (non-blocking)
+  sign-and-submit:
+    name: Sign and Submit for Notarization
     runs-on: macos-14
     needs: build
     steps:
@@ -172,8 +167,9 @@ jobs:
 
           ls -la *.dmg
 
-      - name: Notarize DMGs
+      - name: Submit for Notarization (non-blocking)
         if: ${{ !inputs.dryrun }}
+        id: submit
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
@@ -181,40 +177,66 @@ jobs:
         run: |
           for ARCH in arm64 x86_64; do
             DMG_NAME="KlipPal-${{ inputs.version }}-${ARCH}.dmg"
+            echo "Submitting ${DMG_NAME} for notarization..."
 
-            echo "Notarizing ${DMG_NAME}..."
-
-            # Submit for notarization
-            xcrun notarytool submit "${DMG_NAME}" \
+            # Submit WITHOUT --wait, capture UUID from JSON output
+            OUTPUT=$(xcrun notarytool submit "${DMG_NAME}" \
                 --apple-id "$APPLE_ID" \
                 --password "$APPLE_ID_PASSWORD" \
                 --team-id "$APPLE_TEAM_ID" \
-                --wait
+                --output-format json)
 
-            # Staple the notarization ticket
-            xcrun stapler staple "${DMG_NAME}"
-
-            # Verify
-            xcrun stapler validate "${DMG_NAME}"
+            UUID=$(echo "$OUTPUT" | jq -r '.id')
+            echo "${ARCH}_uuid=${UUID}" >> "$GITHUB_OUTPUT"
+            echo "Submitted ${ARCH}: UUID=${UUID}"
           done
 
-      - name: Calculate Checksums
-        run: |
-          for ARCH in arm64 x86_64; do
-            DMG_NAME="KlipPal-${{ inputs.version }}-${ARCH}.dmg"
-            shasum -a 256 "${DMG_NAME}" > "${DMG_NAME}.sha256"
-            cat "${DMG_NAME}.sha256"
-          done
-
-      - name: Upload Artifacts
+      - name: Upload DMGs as Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: KlipPal-${{ inputs.version }}-release
+          name: KlipPal-${{ inputs.version }}-dmgs
           path: |
             KlipPal-${{ inputs.version }}-arm64.dmg
-            KlipPal-${{ inputs.version }}-arm64.dmg.sha256
             KlipPal-${{ inputs.version }}-x86_64.dmg
-            KlipPal-${{ inputs.version }}-x86_64.dmg.sha256
+          retention-days: 7
+
+      - name: Save Notarization State
+        if: ${{ !inputs.dryrun }}
+        run: |
+          mkdir -p notarization-state
+          cat > notarization-state/state.json << EOF
+          {
+            "version": "${{ inputs.version }}",
+            "build_run_id": "${{ github.run_id }}",
+            "submitted_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "dmgs": {
+              "arm64": {
+                "filename": "KlipPal-${{ inputs.version }}-arm64.dmg",
+                "request_uuid": "${{ steps.submit.outputs.arm64_uuid }}",
+                "status": "In Progress",
+                "last_checked": null
+              },
+              "x86_64": {
+                "filename": "KlipPal-${{ inputs.version }}-x86_64.dmg",
+                "request_uuid": "${{ steps.submit.outputs.x86_64_uuid }}",
+                "status": "In Progress",
+                "last_checked": null
+              }
+            },
+            "completed": false,
+            "failed": false,
+            "failure_reason": null
+          }
+          EOF
+
+          cat notarization-state/state.json
+
+      - name: Cache Notarization State
+        if: ${{ !inputs.dryrun }}
+        uses: actions/cache/save@v4
+        with:
+          path: notarization-state
+          key: notarization-state-${{ github.run_id }}
 
       - name: Dryrun Summary
         if: ${{ inputs.dryrun }}
@@ -234,72 +256,17 @@ jobs:
           echo "1. Configure GitHub secrets (DEVELOPER_ID_CERT_BASE64, etc.)"
           echo "2. Run workflow with dryrun=false"
 
-      - name: Create GitHub Release
+      - name: Summary
         if: ${{ !inputs.dryrun }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Generate changelog from commits since last release
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-
-          if [ -n "$LAST_TAG" ]; then
-            echo "Generating changelog since $LAST_TAG..."
-            CHANGELOG=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s" --no-merges | grep -v "Generated with Claude Code" || true)
-          else
-            echo "No previous tag found, using recent commits..."
-            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges -20 | grep -v "Generated with Claude Code" || true)
-          fi
-
-          # Create release notes with changelog and installation instructions
-          cat > release-notes.md << EOF
-          ## What's Changed
-
-          ${CHANGELOG:-No significant changes}
-
-          ---
-
-          ## Downloads
-
-          | Architecture | File | Description |
-          |--------------|------|-------------|
-          | Apple Silicon (M1/M2/M3) | \`KlipPal-${{ inputs.version }}-arm64.dmg\` | For Macs with Apple Silicon |
-          | Intel | \`KlipPal-${{ inputs.version }}-x86_64.dmg\` | For Intel-based Macs |
-
-          ## Installation
-
-          **Homebrew (recommended):**
-          \`\`\`bash
-          brew install --cask klippal
-          \`\`\`
-
-          **Manual:**
-          1. Download the appropriate DMG for your Mac:
-             - **Apple Silicon (M1/M2/M3)**: \`KlipPal-${{ inputs.version }}-arm64.dmg\`
-             - **Intel**: \`KlipPal-${{ inputs.version }}-x86_64.dmg\`
-          2. Open the DMG and drag KlipPal to Applications
-          3. Launch KlipPal and grant Accessibility permission when prompted
-
-          ## Verification
-
-          Verify the download integrity:
-          \`\`\`bash
-          # For Apple Silicon
-          shasum -a 256 -c KlipPal-${{ inputs.version }}-arm64.dmg.sha256
-
-          # For Intel
-          shasum -a 256 -c KlipPal-${{ inputs.version }}-x86_64.dmg.sha256
-          \`\`\`
-
-          This release is code signed and notarized by Apple.
-          EOF
-
-          # Create release with both DMGs
-          gh release create "v${{ inputs.version }}" \
-              --title "KlipPal ${{ inputs.version }}" \
-              --notes-file release-notes.md \
-              "KlipPal-${{ inputs.version }}-arm64.dmg" \
-              "KlipPal-${{ inputs.version }}-arm64.dmg.sha256" \
-              "KlipPal-${{ inputs.version }}-x86_64.dmg" \
-              "KlipPal-${{ inputs.version }}-x86_64.dmg.sha256"
-
-          echo "::notice::Release performed - https://github.com/${{ github.repository }}/releases/tag/v${{ inputs.version }}"
+          echo "## Notarization Submitted" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Version: ${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "Build Run ID: ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Architecture | Request UUID |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------------|--------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| arm64 | \`${{ steps.submit.outputs.arm64_uuid }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| x86_64 | \`${{ steps.submit.outputs.x86_64_uuid }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Polling will check status every 15 minutes automatically." >> $GITHUB_STEP_SUMMARY

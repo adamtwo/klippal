@@ -1,0 +1,170 @@
+name: CD Finalize Release
+
+on:
+  repository_dispatch:
+    types: [notarization-complete]
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  finalize:
+    name: Staple and Release
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for changelog generation
+
+      - name: Validate Event Payload
+        run: |
+          echo "Build Run ID: ${{ github.event.client_payload.build_run_id }}"
+          echo "Version: ${{ github.event.client_payload.version }}"
+
+          if [ -z "${{ github.event.client_payload.build_run_id }}" ]; then
+            echo "::error::Missing build_run_id in payload"
+            exit 1
+          fi
+          if [ -z "${{ github.event.client_payload.version }}" ]; then
+            echo "::error::Missing version in payload"
+            exit 1
+          fi
+
+      - name: Download DMG Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: KlipPal-${{ github.event.client_payload.version }}-dmgs
+          run-id: ${{ github.event.client_payload.build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List Downloaded Files
+        run: |
+          echo "Downloaded files:"
+          ls -la *.dmg || echo "No DMG files found"
+
+      - name: Staple Notarization Tickets
+        run: |
+          VERSION="${{ github.event.client_payload.version }}"
+
+          for ARCH in arm64 x86_64; do
+            DMG_NAME="KlipPal-${VERSION}-${ARCH}.dmg"
+            echo "Stapling ${DMG_NAME}..."
+
+            xcrun stapler staple "${DMG_NAME}"
+            xcrun stapler validate "${DMG_NAME}"
+
+            echo "::notice::${ARCH} DMG stapled successfully"
+          done
+
+      - name: Calculate Checksums
+        run: |
+          VERSION="${{ github.event.client_payload.version }}"
+
+          for ARCH in arm64 x86_64; do
+            DMG_NAME="KlipPal-${VERSION}-${ARCH}.dmg"
+            shasum -a 256 "${DMG_NAME}" > "${DMG_NAME}.sha256"
+            echo "${DMG_NAME}:"
+            cat "${DMG_NAME}.sha256"
+          done
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ github.event.client_payload.version }}"
+
+          # Generate changelog from commits since last release
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+          if [ -n "$LAST_TAG" ]; then
+            echo "Generating changelog since $LAST_TAG..."
+            CHANGELOG=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s" --no-merges | grep -v "Generated with Claude Code" || true)
+          else
+            echo "No previous tag found, using recent commits..."
+            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges -20 | grep -v "Generated with Claude Code" || true)
+          fi
+
+          # Create release notes with changelog and installation instructions
+          cat > release-notes.md << EOF
+          ## What's Changed
+
+          ${CHANGELOG:-No significant changes}
+
+          ---
+
+          ## Downloads
+
+          | Architecture | File | Description |
+          |--------------|------|-------------|
+          | Apple Silicon (M1/M2/M3) | \`KlipPal-${VERSION}-arm64.dmg\` | For Macs with Apple Silicon |
+          | Intel | \`KlipPal-${VERSION}-x86_64.dmg\` | For Intel-based Macs |
+
+          ## Installation
+
+          **Homebrew (recommended):**
+          \`\`\`bash
+          brew install --cask klippal
+          \`\`\`
+
+          **Manual:**
+          1. Download the appropriate DMG for your Mac:
+             - **Apple Silicon (M1/M2/M3)**: \`KlipPal-${VERSION}-arm64.dmg\`
+             - **Intel**: \`KlipPal-${VERSION}-x86_64.dmg\`
+          2. Open the DMG and drag KlipPal to Applications
+          3. Launch KlipPal and grant Accessibility permission when prompted
+
+          ## Verification
+
+          Verify the download integrity:
+          \`\`\`bash
+          # For Apple Silicon
+          shasum -a 256 -c KlipPal-${VERSION}-arm64.dmg.sha256
+
+          # For Intel
+          shasum -a 256 -c KlipPal-${VERSION}-x86_64.dmg.sha256
+          \`\`\`
+
+          This release is code signed and notarized by Apple.
+          EOF
+
+          # Create release with both DMGs
+          gh release create "v${VERSION}" \
+              --title "KlipPal ${VERSION}" \
+              --notes-file release-notes.md \
+              "KlipPal-${VERSION}-arm64.dmg" \
+              "KlipPal-${VERSION}-arm64.dmg.sha256" \
+              "KlipPal-${VERSION}-x86_64.dmg" \
+              "KlipPal-${VERSION}-x86_64.dmg.sha256"
+
+          echo "::notice::Release created - https://github.com/${{ github.repository }}/releases/tag/v${VERSION}"
+
+      - name: Cleanup Cache
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Clean up any remaining cache entries for this build
+          gh api -X DELETE "repos/${{ github.repository }}/actions/caches?key=notarization-state-${{ github.event.client_payload.build_run_id }}" || true
+
+      - name: Summary
+        run: |
+          VERSION="${{ github.event.client_payload.version }}"
+
+          echo "## Release Created Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Run ID:** ${{ github.event.client_payload.build_run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "| File | Checksum |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|----------|" >> $GITHUB_STEP_SUMMARY
+
+          for ARCH in arm64 x86_64; do
+            DMG_NAME="KlipPal-${VERSION}-${ARCH}.dmg"
+            CHECKSUM=$(cat "${DMG_NAME}.sha256" | awk '{print $1}')
+            echo "| \`${DMG_NAME}\` | \`${CHECKSUM:0:16}...\` |" >> $GITHUB_STEP_SUMMARY
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Release URL:** https://github.com/${{ github.repository }}/releases/tag/v${VERSION}" >> $GITHUB_STEP_SUMMARY

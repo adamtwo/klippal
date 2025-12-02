@@ -1,0 +1,262 @@
+name: CD Notarization Poll
+
+on:
+  schedule:
+    # Run every 15 minutes
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: 'Build run ID to check (optional, checks all pending if empty)'
+        required: false
+        type: string
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  find-pending:
+    name: Find Pending Notarizations
+    runs-on: ubuntu-latest
+    outputs:
+      pending_runs: ${{ steps.find.outputs.pending_runs }}
+      has_pending: ${{ steps.find.outputs.has_pending }}
+    steps:
+      - name: Find Pending Notarization States
+        id: find
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "${{ inputs.build_run_id }}" ]; then
+            echo "Manual run for specific build: ${{ inputs.build_run_id }}"
+            echo "pending_runs=[\"${{ inputs.build_run_id }}\"]" >> "$GITHUB_OUTPUT"
+            echo "has_pending=true" >> "$GITHUB_OUTPUT"
+          else
+            # Query cache entries matching notarization-state-*
+            echo "Searching for pending notarization caches..."
+
+            CACHES=$(gh api "repos/${{ github.repository }}/actions/caches" \
+              --jq '.actions_caches | map(select(.key | startswith("notarization-state-"))) | map(.key | split("-") | .[-1])' 2>/dev/null || echo "[]")
+
+            echo "Found caches: $CACHES"
+
+            if [ "$CACHES" = "[]" ] || [ -z "$CACHES" ] || [ "$CACHES" = "null" ]; then
+              echo "No pending notarizations found"
+              echo "has_pending=false" >> "$GITHUB_OUTPUT"
+              echo "pending_runs=[]" >> "$GITHUB_OUTPUT"
+            else
+              echo "has_pending=true" >> "$GITHUB_OUTPUT"
+              echo "pending_runs=${CACHES}" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+  poll:
+    name: Poll Notarization (${{ matrix.run_id }})
+    runs-on: macos-14
+    needs: find-pending
+    if: needs.find-pending.outputs.has_pending == 'true'
+    strategy:
+      matrix:
+        run_id: ${{ fromJson(needs.find-pending.outputs.pending_runs) }}
+      fail-fast: false
+    steps:
+      - name: Restore Notarization State
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: notarization-state
+          key: notarization-state-${{ matrix.run_id }}
+
+      - name: Check if State Exists
+        id: check
+        run: |
+          if [ "${{ steps.cache.outputs.cache-hit }}" != "true" ]; then
+            echo "No state found for run ${{ matrix.run_id }}, skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Read State
+        if: steps.check.outputs.skip != 'true'
+        id: state
+        run: |
+          cat notarization-state/state.json
+
+          STATE=$(cat notarization-state/state.json)
+          VERSION=$(echo "$STATE" | jq -r '.version')
+          COMPLETED=$(echo "$STATE" | jq -r '.completed')
+          FAILED=$(echo "$STATE" | jq -r '.failed')
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "completed=${COMPLETED}" >> "$GITHUB_OUTPUT"
+          echo "failed=${FAILED}" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if Already Finalized
+        if: steps.check.outputs.skip != 'true' && (steps.state.outputs.completed == 'true' || steps.state.outputs.failed == 'true')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Notarization already finalized (completed=${{ steps.state.outputs.completed }}, failed=${{ steps.state.outputs.failed }})"
+          echo "Cleaning up cache..."
+          gh api -X DELETE "repos/${{ github.repository }}/actions/caches?key=notarization-state-${{ matrix.run_id }}" || true
+
+      - name: Poll Notarization Status
+        if: steps.check.outputs.skip != 'true' && steps.state.outputs.completed != 'true' && steps.state.outputs.failed != 'true'
+        id: poll
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          STATE=$(cat notarization-state/state.json)
+          ALL_COMPLETE=true
+          ANY_FAILED=false
+          FAILURE_DETAILS=""
+
+          for ARCH in arm64 x86_64; do
+            UUID=$(echo "$STATE" | jq -r ".dmgs.${ARCH}.request_uuid")
+            echo "Checking ${ARCH} (UUID: ${UUID})..."
+
+            INFO=$(xcrun notarytool info "$UUID" \
+                --apple-id "$APPLE_ID" \
+                --password "$APPLE_ID_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" \
+                --output-format json 2>&1) || true
+
+            STATUS=$(echo "$INFO" | jq -r '.status // "Unknown"')
+            echo "${ARCH} status: ${STATUS}"
+
+            # Update state with current status and timestamp
+            TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            STATE=$(echo "$STATE" | jq ".dmgs.${ARCH}.status = \"${STATUS}\" | .dmgs.${ARCH}.last_checked = \"${TIMESTAMP}\"")
+
+            case "$STATUS" in
+              "Accepted")
+                echo "::notice::${ARCH} notarization succeeded"
+                ;;
+              "In Progress")
+                ALL_COMPLETE=false
+                echo "${ARCH} still in progress, will check again later"
+                ;;
+              "Invalid"|"Rejected")
+                ANY_FAILED=true
+                echo "::error::${ARCH} notarization failed with status: ${STATUS}"
+
+                # Get detailed log for debugging
+                echo "Fetching notarization log..."
+                LOG=$(xcrun notarytool log "$UUID" \
+                    --apple-id "$APPLE_ID" \
+                    --password "$APPLE_ID_PASSWORD" \
+                    --team-id "$APPLE_TEAM_ID" 2>&1) || LOG="Could not fetch log"
+
+                FAILURE_DETAILS="${FAILURE_DETAILS}### ${ARCH}\nStatus: ${STATUS}\nLog:\n\`\`\`\n${LOG}\n\`\`\`\n\n"
+                ;;
+              *)
+                echo "::warning::Unknown status for ${ARCH}: ${STATUS}"
+                ALL_COMPLETE=false
+                ;;
+            esac
+          done
+
+          # Update completion status in state
+          if [ "$ANY_FAILED" = "true" ]; then
+            STATE=$(echo "$STATE" | jq '.failed = true')
+          elif [ "$ALL_COMPLETE" = "true" ]; then
+            STATE=$(echo "$STATE" | jq '.completed = true')
+          fi
+
+          # Save updated state
+          echo "$STATE" > notarization-state/state.json
+          echo "Updated state:"
+          cat notarization-state/state.json
+
+          # Set outputs
+          echo "all_complete=${ALL_COMPLETE}" >> "$GITHUB_OUTPUT"
+          echo "any_failed=${ANY_FAILED}" >> "$GITHUB_OUTPUT"
+
+          # Write failure details to file for summary
+          if [ "$ANY_FAILED" = "true" ]; then
+            echo -e "$FAILURE_DETAILS" > /tmp/failure_details.md
+          fi
+
+      - name: Update Cache with New State
+        if: steps.check.outputs.skip != 'true' && steps.state.outputs.completed != 'true' && steps.state.outputs.failed != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: notarization-state
+          key: notarization-state-${{ matrix.run_id }}-poll-${{ github.run_id }}
+
+      - name: Delete Old Cache Entry
+        if: steps.check.outputs.skip != 'true' && steps.state.outputs.completed != 'true' && steps.state.outputs.failed != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Delete the old cache and rename the new one
+          gh api -X DELETE "repos/${{ github.repository }}/actions/caches?key=notarization-state-${{ matrix.run_id }}" || true
+
+      - name: Rename Cache to Original Key
+        if: steps.check.outputs.skip != 'true' && steps.state.outputs.completed != 'true' && steps.state.outputs.failed != 'true' && steps.poll.outputs.all_complete != 'true' && steps.poll.outputs.any_failed != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: notarization-state
+          key: notarization-state-${{ matrix.run_id }}
+
+      - name: Trigger Finalize Workflow
+        if: steps.check.outputs.skip != 'true' && steps.poll.outputs.all_complete == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "All notarizations complete! Triggering finalize workflow..."
+
+          gh api "repos/${{ github.repository }}/dispatches" \
+            -f event_type=notarization-complete \
+            -f "client_payload={\"build_run_id\":\"${{ matrix.run_id }}\",\"version\":\"${{ steps.state.outputs.version }}\"}"
+
+          echo "::notice::Triggered cd-finalize workflow for version ${{ steps.state.outputs.version }}"
+
+          # Clean up cache since we're done
+          gh api -X DELETE "repos/${{ github.repository }}/actions/caches?key=notarization-state-${{ matrix.run_id }}" || true
+          gh api -X DELETE "repos/${{ github.repository }}/actions/caches?key=notarization-state-${{ matrix.run_id }}-poll-${{ github.run_id }}" || true
+
+      - name: Handle Notarization Failure
+        if: steps.check.outputs.skip != 'true' && steps.poll.outputs.any_failed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "::error::Notarization failed for version ${{ steps.state.outputs.version }}"
+
+          # Write failure summary
+          echo "## Notarization Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.state.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Run ID:** ${{ matrix.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f /tmp/failure_details.md ]; then
+            cat /tmp/failure_details.md >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Review the notarization logs above" >> $GITHUB_STEP_SUMMARY
+          echo "2. Fix any code signing or app bundle issues" >> $GITHUB_STEP_SUMMARY
+          echo "3. Re-run the cd-build workflow" >> $GITHUB_STEP_SUMMARY
+
+          # Clean up cache
+          gh api -X DELETE "repos/${{ github.repository }}/actions/caches?key=notarization-state-${{ matrix.run_id }}" || true
+          gh api -X DELETE "repos/${{ github.repository }}/actions/caches?key=notarization-state-${{ matrix.run_id }}-poll-${{ github.run_id }}" || true
+
+          # Fail the workflow
+          exit 1
+
+      - name: Status Summary
+        if: steps.check.outputs.skip != 'true' && steps.poll.outputs.all_complete != 'true' && steps.poll.outputs.any_failed != 'true' && steps.state.outputs.completed != 'true' && steps.state.outputs.failed != 'true'
+        run: |
+          echo "## Notarization In Progress" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.state.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Run ID:** ${{ matrix.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Will check again in 15 minutes." >> $GITHUB_STEP_SUMMARY
