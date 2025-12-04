@@ -39,7 +39,7 @@ Type to filter through your history. KlipPal searches the content of everything 
 ### Homebrew (Recommended)
 
 ```bash
-brew install --cask klippal
+brew install --cask adamtwo/klippal/klippal
 ```
 
 ### Manual Installation
