@@ -72,6 +72,12 @@ jobs:
           name: KlipPal-x86_64-app
           path: KlipPal-x86_64.app
 
+      - name: Fix Executable Permissions
+        run: |
+          # GitHub Actions artifacts don't preserve executable permissions
+          chmod +x KlipPal-arm64.app/Contents/MacOS/KlipPal
+          chmod +x KlipPal-x86_64.app/Contents/MacOS/KlipPal
+
       - name: Import Code Signing Certificate
         if: ${{ !inputs.dryrun }}
         env:
