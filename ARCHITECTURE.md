@@ -427,7 +427,7 @@ PasteManager.pasteItem():
 
 ```bash
 # Install via Homebrew (recommended)
-brew install --cask klippal
+brew install --cask adamtwo/klippal/klippal
 ```
 
 ---

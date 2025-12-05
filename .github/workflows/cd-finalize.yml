@@ -105,7 +105,7 @@ jobs:
 
           **Homebrew (recommended):**
           \`\`\`bash
-          brew install --cask klippal
+          brew install --cask adamtwo/klippal/klippal
           \`\`\`
 
           **Manual:**

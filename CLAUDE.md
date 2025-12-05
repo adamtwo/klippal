@@ -382,7 +382,7 @@ KlipPal/
 
 ### Installation (Users)
 ```bash
-brew install --cask klippal
+brew install --cask adamtwo/klippal/klippal
 ```
 
 ### Release Checklist (Developers)
