@@ -98,7 +98,7 @@ jobs:
 
           | Architecture | File | Description |
           |--------------|------|-------------|
-          | Apple Silicon (M1/M2/M3) | \`KlipPal-${VERSION}-arm64.dmg\` | For Macs with Apple Silicon |
+          | Apple Silicon (M1/M2/M3/M4) | \`KlipPal-${VERSION}-arm64.dmg\` | For all Macs with Apple Silicon |
           | Intel | \`KlipPal-${VERSION}-x86_64.dmg\` | For Intel-based Macs |
 
           ## Installation
@@ -110,7 +110,7 @@ jobs:
 
           **Manual:**
           1. Download the appropriate DMG for your Mac:
-             - **Apple Silicon (M1/M2/M3)**: \`KlipPal-${VERSION}-arm64.dmg\`
+             - **Apple Silicon (M1/M2/M3/M4)**: \`KlipPal-${VERSION}-arm64.dmg\`
              - **Intel**: \`KlipPal-${VERSION}-x86_64.dmg\`
           2. Open the DMG and drag KlipPal to Applications
           3. Launch KlipPal and grant Accessibility permission when prompted
