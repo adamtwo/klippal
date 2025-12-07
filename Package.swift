@@ -19,7 +19,7 @@ let package = Package(
             name: "KlipPal",
             dependencies: [],
             path: "Sources/KlipPal",
-            exclude: ["Info.plist", "KlipPal.entitlements"]
+            exclude: ["Info.plist", "KlipPal.entitlements", "Resources"]
         ),
 
         // Test target
