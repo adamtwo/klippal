@@ -24,6 +24,7 @@ let iconSizes: [(size: Int, scale: Int, name: String)] = [
 ]
 
 /// Creates a single icon image at the specified size
+/// Design matches website favicon: dark gray background (#3b3b3b) with blue text (#3b82f6)
 func createIconImage(size: Int, scale: Int) -> NSImage {
     let pixelSize = size * scale
     let image = NSImage(size: NSSize(width: pixelSize, height: pixelSize))
@@ -38,51 +39,42 @@ func createIconImage(size: Int, scale: Int) -> NSImage {
 
     let rect = CGRect(x: 0, y: 0, width: pixelSize, height: pixelSize)
 
-    // Background: rounded rectangle with gradient
-    let cornerRadius = CGFloat(pixelSize) * 0.22 // macOS standard icon corner radius
+    // Background: rounded rectangle matching website favicon
+    let cornerRadius = CGFloat(pixelSize) * 0.1875 // 6/32 ratio from favicon
     let path = CGPath(roundedRect: rect.insetBy(dx: 1, dy: 1),
                       cornerWidth: cornerRadius,
                       cornerHeight: cornerRadius,
                       transform: nil)
 
-    // Gradient background (blue accent color)
-    let colors = [
-        NSColor(red: 0.0, green: 0.478, blue: 1.0, alpha: 1.0).cgColor,  // System blue
-        NSColor(red: 0.0, green: 0.35, blue: 0.85, alpha: 1.0).cgColor,  // Darker blue
-    ]
-    let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                               colors: colors as CFArray,
-                               locations: [0.0, 1.0])!
-
-    context.saveGState()
+    // Solid dark gray background matching website (#3b3b3b)
+    let backgroundColor = NSColor(red: 0.231, green: 0.231, blue: 0.231, alpha: 1.0) // #3b3b3b
+    context.setFillColor(backgroundColor.cgColor)
     context.addPath(path)
-    context.clip()
-    context.drawLinearGradient(gradient,
-                                start: CGPoint(x: 0, y: CGFloat(pixelSize)),
-                                end: CGPoint(x: 0, y: 0),
-                                options: [])
-    context.restoreGState()
+    context.fillPath()
 
-    // Add subtle border
-    context.setStrokeColor(NSColor.white.withAlphaComponent(0.3).cgColor)
-    context.setLineWidth(CGFloat(pixelSize) * 0.01)
+    // Add subtle border for depth
+    context.setStrokeColor(NSColor.white.withAlphaComponent(0.1).cgColor)
+    context.setLineWidth(CGFloat(pixelSize) * 0.005)
     context.addPath(path)
     context.strokePath()
 
-    // Draw "Kᵖ" text
-    let fontSize = CGFloat(pixelSize) * 0.55
+    // Draw "Kᵖ" text in blue (#3b82f6 - Tailwind blue-500)
+    let fontSize = CGFloat(pixelSize) * 0.5
 
     // Create attributed string with proper font
-    let font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
+    let font = NSFont.systemFont(ofSize: fontSize, weight: .semibold)
     let roundedFont = NSFont(descriptor: font.fontDescriptor.withDesign(.rounded) ?? font.fontDescriptor,
                               size: fontSize) ?? font
 
     let paragraphStyle = NSMutableParagraphStyle()
     paragraphStyle.alignment = .center
 
+    // Blue text color matching website (#3b82f6)
+    let textColor = NSColor(red: 0.231, green: 0.510, blue: 0.965, alpha: 1.0) // #3b82f6
+
     let attributes: [NSAttributedString.Key: Any] = [
         .font: roundedFont,
-        .foregroundColor: NSColor.white,
+        .foregroundColor: textColor,
         .paragraphStyle: paragraphStyle
     ]
 
