@@ -18,7 +18,8 @@ let package = Package(
         .executableTarget(
             name: "KlipPal",
             dependencies: [],
-            path: "Sources/KlipPal"
+            path: "Sources/KlipPal",
+            exclude: ["Info.plist", "KlipPal.entitlements"]
         ),
 
         // Test target
