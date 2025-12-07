@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Window controller for the preferences window
-class PreferencesWindowController: NSWindowController {
+class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     static var shared: PreferencesWindowController?
 
     convenience init() {
@@ -18,10 +18,10 @@ class PreferencesWindowController: NSWindowController {
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: PreferencesView())
 
-        // Ensure window appears above other windows
-        window.level = .floating
-
         self.init(window: window)
+
+        // Set delegate to handle window events
+        window.delegate = self
     }
 
     static func show() {
@@ -38,21 +38,40 @@ class PreferencesWindowController: NSWindowController {
 
         print("📋 Making window key and ordering front")
 
-        // Reset window level to normal before showing (in case it was changed)
+        // Center window
+        window.center()
+
+        // Set floating level temporarily to ensure it appears above other windows
         window.level = .floating
 
-        // Center and show window
-        window.center()
+        // CRITICAL: Switch to regular activation policy for proper keyboard input
+        // This allows text fields in child windows to receive keyboard events
+        NSApp.setActivationPolicy(.regular)
+
+        // Activate the app and show window
+        NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
 
-        // Activate the app to bring it to front
-        NSApp.activate(ignoringOtherApps: true)
-
-        // After activation, reset to normal level so it behaves normally
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        // Reset to normal level after a short delay so it behaves like a normal window
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             window.level = .normal
         }
 
         print("📋 Window frame: \(window.frame), isVisible: \(window.isVisible)")
+    }
+
+    // MARK: - NSWindowDelegate
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        // Ensure app stays active when window becomes key
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        // Restore accessory activation policy when preferences window closes
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            NSApp.setActivationPolicy(.accessory)
+        }
+        Self.shared = nil
     }
 }

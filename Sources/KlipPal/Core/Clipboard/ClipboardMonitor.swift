@@ -14,14 +14,16 @@ class ClipboardMonitor: ObservableObject {
     private let storage: StorageEngineProtocol
     private let deduplicator: ClipboardDeduplicator
     private let blobStorage: BlobStorageManager?
+    private let excludedAppsManager: ExcludedAppsManager
 
     /// Polling interval in seconds (0.5s = 500ms)
     private let pollingInterval: TimeInterval = 0.5
 
-    init(storage: StorageEngineProtocol, blobStorage: BlobStorageManager? = nil) {
+    init(storage: StorageEngineProtocol, blobStorage: BlobStorageManager? = nil, excludedAppsManager: ExcludedAppsManager = .shared) {
         self.storage = storage
         self.deduplicator = ClipboardDeduplicator(storage: storage)
         self.blobStorage = blobStorage
+        self.excludedAppsManager = excludedAppsManager
         self.changeCount = pasteboard.changeCount
     }
 
@@ -55,6 +57,15 @@ class ClipboardMonitor: ObservableObject {
 
         changeCount = currentChangeCount
 
+        // Get source application first to check exclusion
+        let sourceApp = ClipboardContentExtractor.getFrontmostApp()
+
+        // Check if app is excluded
+        if excludedAppsManager.shouldExclude(appName: sourceApp) {
+            print("⏭️ Skipping clipboard from excluded app: \(sourceApp ?? "unknown")")
+            return
+        }
+
         // Extract content from pasteboard
         guard let (content, type, imageData) = ClipboardContentExtractor.extract(from: pasteboard) else {
             print("⚠️ Could not extract content from pasteboard")
@@ -66,9 +77,6 @@ class ClipboardMonitor: ObservableObject {
             print("⏭️ Skipping duplicate clipboard content")
             return
         }
-
-        // Get source application
-        let sourceApp = ClipboardContentExtractor.getFrontmostApp()
 
         // Handle image storage if needed
         var blobPath: String? = nil

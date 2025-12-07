@@ -3,6 +3,7 @@ import SwiftUI
 /// Main preferences view with tabs for different settings sections
 struct PreferencesView: View {
     @ObservedObject private var preferences = PreferencesManager.shared
+    @ObservedObject private var excludedAppsManager = ExcludedAppsManager.shared
     @State private var showingClearConfirmation = false
     @State private var itemCount: Int = 0
 
@@ -16,6 +17,11 @@ struct PreferencesView: View {
             StorageSettingsView(preferences: preferences, showingClearConfirmation: $showingClearConfirmation, itemCount: $itemCount)
                 .tabItem {
                     Label("Storage", systemImage: "internaldrive")
+                }
+
+            AdvancedSettingsView(excludedAppsManager: excludedAppsManager)
+                .tabItem {
+                    Label("Advanced", systemImage: "gearshape.2")
                 }
 
             AboutView()
