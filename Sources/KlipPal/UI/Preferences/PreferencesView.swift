@@ -29,7 +29,7 @@ struct PreferencesView: View {
                     Label("About", systemImage: "info.circle")
                 }
         }
-        .frame(width: 450, height: 300)
+        .frame(minWidth: 400, idealWidth: 450, minHeight: 280, idealHeight: 320)
         .alert("Clear Clipboard History", isPresented: $showingClearConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Clear All", role: .destructive) {
