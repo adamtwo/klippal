@@ -110,6 +110,9 @@ struct OverlayView: View {
                                         // Double-click: copy, close, and paste
                                         viewModel.selectedIndex = index
                                         pasteItem(item)
+                                    },
+                                    onLoadFullImage: {
+                                        await viewModel.loadFullImage(for: item)
                                     }
                                 )
                                 .id(item.id)

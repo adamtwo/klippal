@@ -11,6 +11,7 @@ class OverlayViewModel: ObservableObject {
     @Published var selectedIndex: Int = 0
     @Published var isSearchFieldFocused: Bool = false
     @Published var thumbnailCache: [String: NSImage] = [:]
+    @Published var fullImageCache: [String: NSImage] = [:]
 
     private let storage: SQLiteStorageEngine
     private let blobStorage: BlobStorageManager?
@@ -96,6 +97,33 @@ class OverlayViewModel: ObservableObject {
     /// Get cached thumbnail for an item
     func thumbnail(for item: ClipboardItem) -> NSImage? {
         return thumbnailCache[item.contentHash]
+    }
+
+    /// Load full-size image for an item (for preview popup)
+    func loadFullImage(for item: ClipboardItem) async -> NSImage? {
+        // Only load images
+        guard item.contentType == .image else { return nil }
+
+        // Check cache first
+        if let cached = fullImageCache[item.contentHash] {
+            return cached
+        }
+
+        // Load from blob storage
+        guard let blobStorage = blobStorage,
+              let blobPath = item.blobPath else { return nil }
+
+        do {
+            let imageData = try await blobStorage.load(relativePath: blobPath)
+            if let image = NSImage(data: imageData) {
+                fullImageCache[item.contentHash] = image
+                return image
+            }
+        } catch {
+            print("⚠️ Failed to load full image: \(error)")
+        }
+
+        return nil
     }
 
     func search(query: String) {

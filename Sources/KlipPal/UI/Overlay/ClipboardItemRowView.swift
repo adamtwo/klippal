@@ -9,8 +9,15 @@ struct ClipboardItemRowView: View {
     var onDelete: (() -> Void)?
     var onSingleClick: (() -> Void)?
     var onDoubleClick: (() -> Void)?
+    var onLoadFullImage: (() async -> NSImage?)?
 
-    init(item: ClipboardItem, isSelected: Bool, highlightRanges: [NSRange] = [], thumbnailImage: NSImage? = nil, onDelete: (() -> Void)? = nil, onSingleClick: (() -> Void)? = nil, onDoubleClick: (() -> Void)? = nil) {
+    @State private var isHoveringRow = false
+    @State private var fullImage: NSImage?
+    @State private var isLoadingFullImage = false
+    @State private var urlPreview: URLPreviewData?
+    @State private var isLoadingURLPreview = false
+
+    init(item: ClipboardItem, isSelected: Bool, highlightRanges: [NSRange] = [], thumbnailImage: NSImage? = nil, onDelete: (() -> Void)? = nil, onSingleClick: (() -> Void)? = nil, onDoubleClick: (() -> Void)? = nil, onLoadFullImage: (() async -> NSImage?)? = nil) {
         self.item = item
         self.isSelected = isSelected
         self.highlightRanges = highlightRanges
@@ -18,6 +25,7 @@ struct ClipboardItemRowView: View {
         self.onDelete = onDelete
         self.onSingleClick = onSingleClick
         self.onDoubleClick = onDoubleClick
+        self.onLoadFullImage = onLoadFullImage
     }
 
     var body: some View {
@@ -66,6 +74,7 @@ struct ClipboardItemRowView: View {
                         .font(.system(size: 13))
                         .foregroundColor(.purple)
                     } else {
+                        // Text content
                         HighlightedText(
                             item.preview,
                             highlightRanges: adjustedRanges,
@@ -145,6 +154,48 @@ struct ClipboardItemRowView: View {
         )
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
+        .onHover { hovering in
+            // Only show popover for items that have preview content
+            if shouldShowPreviewPopover {
+                isHoveringRow = hovering
+                // Pre-load content when hovering starts
+                if hovering {
+                    if item.contentType == .image && fullImage == nil && !isLoadingFullImage {
+                        loadFullImageAsync()
+                    } else if item.contentType == .url && urlPreview == nil && !isLoadingURLPreview {
+                        loadURLPreviewAsync()
+                    }
+                }
+            }
+        }
+        .popover(isPresented: $isHoveringRow, arrowEdge: .trailing) {
+            if item.contentType == .image {
+                ImagePreviewPopover(
+                    image: fullImage,
+                    isLoading: isLoadingFullImage,
+                    dimensions: item.content
+                )
+            } else if item.contentType == .url {
+                URLPreviewPopover(
+                    url: item.content,
+                    preview: urlPreview,
+                    isLoading: isLoadingURLPreview
+                )
+            } else {
+                TextPreviewPopover(
+                    content: item.content,
+                    characterCount: item.formattedCharacterCount
+                )
+            }
+        }
+    }
+
+    /// Whether this item should show a preview popover on hover
+    private var shouldShowPreviewPopover: Bool {
+        // Show for images (always have full-size preview)
+        // Show for URLs (website preview)
+        // Show for truncated text
+        item.contentType == .image || item.contentType == .url || item.isTruncated
     }
 
     /// Adjusts highlight ranges to work with the preview text
@@ -279,5 +330,354 @@ struct ClipboardItemRowView: View {
             // Use file-specific background color based on extension
             return iconColor.opacity(0.1)
         }
+    }
+
+    /// Load full image asynchronously for preview
+    private func loadFullImageAsync() {
+        guard let loadFullImage = onLoadFullImage else { return }
+        isLoadingFullImage = true
+        Task {
+            let image = await loadFullImage()
+            await MainActor.run {
+                fullImage = image
+                isLoadingFullImage = false
+            }
+        }
+    }
+
+    /// Load URL preview asynchronously
+    private func loadURLPreviewAsync() {
+        guard let url = URL(string: item.content) else { return }
+        isLoadingURLPreview = true
+        Task {
+            let preview = await URLPreviewFetcher.fetchPreview(for: url)
+            await MainActor.run {
+                urlPreview = preview
+                isLoadingURLPreview = false
+            }
+        }
+    }
+}
+
+// MARK: - URL Preview Data
+
+/// Data structure for URL preview information
+struct URLPreviewData {
+    let title: String?
+    let description: String?
+    let siteName: String?
+    let imageURL: URL?
+    let image: NSImage?
+}
+
+/// Fetches preview data for URLs using Open Graph metadata
+enum URLPreviewFetcher {
+    /// Fetch preview data for a URL
+    static func fetchPreview(for url: URL) async -> URLPreviewData? {
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200,
+                  let html = String(data: data, encoding: .utf8) else {
+                return nil
+            }
+
+            // Parse Open Graph and standard meta tags
+            let title = extractMetaContent(from: html, property: "og:title")
+                ?? extractTitle(from: html)
+            let description = extractMetaContent(from: html, property: "og:description")
+                ?? extractMetaContent(from: html, name: "description")
+            let siteName = extractMetaContent(from: html, property: "og:site_name")
+                ?? url.host
+            let imageURLString = extractMetaContent(from: html, property: "og:image")
+
+            var image: NSImage?
+            if let imageURLString = imageURLString,
+               let imageURL = URL(string: imageURLString, relativeTo: url) {
+                image = await fetchImage(from: imageURL.absoluteURL)
+            }
+
+            return URLPreviewData(
+                title: title,
+                description: description,
+                siteName: siteName,
+                imageURL: imageURLString.flatMap { URL(string: $0, relativeTo: url)?.absoluteURL },
+                image: image
+            )
+        } catch {
+            print("⚠️ Failed to fetch URL preview: \(error)")
+            return nil
+        }
+    }
+
+    /// Extract content from meta tag with property attribute
+    private static func extractMetaContent(from html: String, property: String) -> String? {
+        let pattern = #"<meta[^>]*property=["\']"# + NSRegularExpression.escapedPattern(for: property) + #"["\'][^>]*content=["\']([^"\']*)["\']"#
+        let altPattern = #"<meta[^>]*content=["\']([^"\']*)["\'][^>]*property=["\']"# + NSRegularExpression.escapedPattern(for: property) + #"["\']"#
+
+        if let match = firstMatch(pattern: pattern, in: html) {
+            return match
+        }
+        return firstMatch(pattern: altPattern, in: html)
+    }
+
+    /// Extract content from meta tag with name attribute
+    private static func extractMetaContent(from html: String, name: String) -> String? {
+        let pattern = #"<meta[^>]*name=["\']"# + NSRegularExpression.escapedPattern(for: name) + #"["\'][^>]*content=["\']([^"\']*)["\']"#
+        let altPattern = #"<meta[^>]*content=["\']([^"\']*)["\'][^>]*name=["\']"# + NSRegularExpression.escapedPattern(for: name) + #"["\']"#
+
+        if let match = firstMatch(pattern: pattern, in: html) {
+            return match
+        }
+        return firstMatch(pattern: altPattern, in: html)
+    }
+
+    /// Extract title from <title> tag
+    private static func extractTitle(from html: String) -> String? {
+        let pattern = #"<title[^>]*>([^<]*)</title>"#
+        return firstMatch(pattern: pattern, in: html)
+    }
+
+    /// Helper to find first regex match
+    private static func firstMatch(pattern: String, in string: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else {
+            return nil
+        }
+        let range = NSRange(string.startIndex..., in: string)
+        guard let match = regex.firstMatch(in: string, options: [], range: range),
+              match.numberOfRanges > 1,
+              let captureRange = Range(match.range(at: 1), in: string) else {
+            return nil
+        }
+        let result = String(string[captureRange])
+        return result.isEmpty ? nil : decodeHTMLEntities(result)
+    }
+
+    /// Decode common HTML entities
+    private static func decodeHTMLEntities(_ string: String) -> String {
+        var result = string
+        let entities = [
+            ("&amp;", "&"),
+            ("&lt;", "<"),
+            ("&gt;", ">"),
+            ("&quot;", "\""),
+            ("&#39;", "'"),
+            ("&apos;", "'"),
+            ("&nbsp;", " ")
+        ]
+        for (entity, character) in entities {
+            result = result.replacingOccurrences(of: entity, with: character)
+        }
+        return result
+    }
+
+    /// Fetch image from URL
+    private static func fetchImage(from url: URL) async -> NSImage? {
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            return NSImage(data: data)
+        } catch {
+            return nil
+        }
+    }
+}
+
+// MARK: - Image Preview Popover
+
+/// Popover view showing a larger preview of an image
+struct ImagePreviewPopover: View {
+    let image: NSImage?
+    let isLoading: Bool
+    let dimensions: String
+
+    /// Maximum size for the preview
+    private let maxPreviewSize: CGFloat = 480
+
+    var body: some View {
+        VStack(spacing: 8) {
+            if isLoading {
+                ProgressView()
+                    .scaleEffect(0.8)
+                    .frame(width: 200, height: 200)
+            } else if let image = image {
+                let size = scaledSize(for: image.size)
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: size.width, height: size.height)
+                    .cornerRadius(8)
+            } else {
+                Image(systemName: "photo")
+                    .font(.system(size: 48))
+                    .foregroundColor(.secondary)
+                    .frame(width: 200, height: 200)
+            }
+
+            Text(dimensions)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(12)
+    }
+
+    /// Calculate scaled size maintaining aspect ratio within max bounds
+    private func scaledSize(for originalSize: NSSize) -> CGSize {
+        let widthRatio = maxPreviewSize / originalSize.width
+        let heightRatio = maxPreviewSize / originalSize.height
+        let scale = min(widthRatio, heightRatio, 1.0) // Don't upscale
+
+        return CGSize(
+            width: originalSize.width * scale,
+            height: originalSize.height * scale
+        )
+    }
+}
+
+// MARK: - Text Preview Popover
+
+/// Popover view showing full text content for truncated items
+struct TextPreviewPopover: View {
+    let content: String
+    let characterCount: String
+
+    /// Maximum width for the preview
+    private let maxWidth: CGFloat = 400
+    /// Maximum height for the preview
+    private let maxHeight: CGFloat = 300
+    /// Maximum characters to show in preview
+    private let maxPreviewChars = 2000
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ScrollView {
+                Text(previewText)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(.primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxWidth: maxWidth, maxHeight: maxHeight)
+
+            HStack {
+                Text(characterCount)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                if content.count > maxPreviewChars {
+                    Text("• showing first \(maxPreviewChars) chars")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+
+                Spacer()
+            }
+        }
+        .padding(12)
+    }
+
+    /// Text to display (truncated if very long)
+    private var previewText: String {
+        if content.count > maxPreviewChars {
+            return String(content.prefix(maxPreviewChars)) + "..."
+        }
+        return content
+    }
+}
+
+// MARK: - URL Preview Popover
+
+/// Popover view showing a preview of a URL/website
+struct URLPreviewPopover: View {
+    let url: String
+    let preview: URLPreviewData?
+    let isLoading: Bool
+
+    /// Maximum width for the preview
+    private let maxWidth: CGFloat = 350
+    /// Maximum height for the image
+    private let maxImageHeight: CGFloat = 180
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if isLoading {
+                HStack {
+                    Spacer()
+                    VStack(spacing: 8) {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Loading preview...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                }
+                .frame(width: maxWidth, height: 120)
+            } else if let preview = preview {
+                // Preview image
+                if let image = preview.image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(maxWidth: maxWidth, maxHeight: maxImageHeight)
+                        .clipped()
+                        .cornerRadius(8)
+                }
+
+                // Site name
+                if let siteName = preview.siteName {
+                    Text(siteName.uppercased())
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)
+                }
+
+                // Title
+                if let title = preview.title {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                }
+
+                // Description
+                if let description = preview.description {
+                    Text(description)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .lineLimit(3)
+                }
+
+                // URL
+                Text(url)
+                    .font(.caption)
+                    .foregroundColor(.purple)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } else {
+                // Fallback when no preview available
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "link")
+                            .font(.title2)
+                            .foregroundColor(.purple)
+                        Text("Link Preview")
+                            .font(.headline)
+                    }
+
+                    Text(url)
+                        .font(.subheadline)
+                        .foregroundColor(.purple)
+                        .lineLimit(2)
+
+                    Text("Preview not available")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(width: maxWidth)
+            }
+        }
+        .frame(width: maxWidth)
+        .padding(12)
     }
 }
