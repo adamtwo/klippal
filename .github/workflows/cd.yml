@@ -1,0 +1,392 @@
+name: CD Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 1.0.0)'
+        required: true
+        type: string
+      dryrun:
+        description: 'Dry run (skip notarization and release)'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  # Run CI workflow first
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  # Build for each architecture
+  build:
+    name: Build (${{ matrix.arch }})
+    runs-on: macos-14
+    needs: ci
+    strategy:
+      matrix:
+        arch: [arm64, x86_64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Build Release (${{ matrix.arch }})
+        run: swift build -c release --arch ${{ matrix.arch }} -v
+
+      - name: Create App Bundle
+        run: |
+          chmod +x scripts/create-app-bundle.sh
+          ./scripts/create-app-bundle.sh ${{ inputs.version }} ${{ matrix.arch }}
+
+      - name: Upload App Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: KlipPal-${{ matrix.arch }}-app
+          path: KlipPal.app
+
+  # Sign, notarize (synchronous), staple, and release
+  sign-notarize-release:
+    name: Sign, Notarize, and Release
+    runs-on: macos-14
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for changelog generation
+
+      - name: Download arm64 App Bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: KlipPal-arm64-app
+          path: KlipPal-arm64.app
+
+      - name: Download x86_64 App Bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: KlipPal-x86_64-app
+          path: KlipPal-x86_64.app
+
+      - name: Fix Executable Permissions
+        run: |
+          # GitHub Actions artifacts don't preserve executable permissions
+          chmod +x KlipPal-arm64.app/Contents/MacOS/KlipPal
+          chmod +x KlipPal-x86_64.app/Contents/MacOS/KlipPal
+
+      - name: Import Code Signing Certificate
+        if: ${{ !inputs.dryrun }}
+        env:
+          CERTIFICATE_P12_BASE64: ${{ secrets.DEVELOPER_ID_CERT_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+        run: |
+          # Create temporary keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Import certificate
+          CERT_PATH=$RUNNER_TEMP/certificate.p12
+          echo "$CERTIFICATE_P12_BASE64" | base64 --decode > "$CERT_PATH"
+
+          security import "$CERT_PATH" \
+              -P "$CERTIFICATE_PASSWORD" \
+              -A \
+              -t cert \
+              -f pkcs12 \
+              -k "$KEYCHAIN_PATH"
+
+          security set-key-partition-list \
+              -S apple-tool:,apple: \
+              -k "$KEYCHAIN_PASSWORD" \
+              "$KEYCHAIN_PATH"
+
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+          rm "$CERT_PATH"
+
+      - name: Code Sign Applications
+        if: ${{ !inputs.dryrun }}
+        env:
+          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
+        run: |
+          for ARCH in arm64 x86_64; do
+            echo "Signing KlipPal-${ARCH}.app..."
+            codesign --deep --force --verify --verbose \
+                --sign "Developer ID Application: $SIGNING_IDENTITY" \
+                --entitlements Sources/KlipPal/KlipPal.entitlements \
+                --options runtime \
+                "KlipPal-${ARCH}.app"
+
+            # Verify signing
+            codesign --verify --verbose "KlipPal-${ARCH}.app"
+          done
+
+      - name: Ad-hoc Sign (Dryrun)
+        if: ${{ inputs.dryrun }}
+        run: |
+          for ARCH in arm64 x86_64; do
+            echo "Ad-hoc signing KlipPal-${ARCH}.app..."
+            codesign --deep --force --sign - "KlipPal-${ARCH}.app"
+          done
+          echo "Ad-hoc signed (dryrun mode)"
+
+      - name: Create DMGs
+        run: |
+          brew install create-dmg
+
+          for ARCH in arm64 x86_64; do
+            # Rename app for DMG creation
+            mv "KlipPal-${ARCH}.app" "KlipPal.app"
+
+            DMG_NAME="KlipPal-${{ inputs.version }}-${ARCH}.dmg"
+
+            # Create DMG with Applications symlink
+            create-dmg \
+              --volname "KlipPal" \
+              --window-pos 200 120 \
+              --window-size 600 400 \
+              --icon-size 100 \
+              --icon "KlipPal.app" 175 175 \
+              --app-drop-link 425 175 \
+              "${DMG_NAME}" \
+              "KlipPal.app" || true
+
+            # Fallback to simple DMG if create-dmg fails
+            if [ ! -f "${DMG_NAME}" ]; then
+              hdiutil create -srcfolder KlipPal.app \
+                  -volname "KlipPal" \
+                  -format UDZO \
+                  "${DMG_NAME}"
+            fi
+
+            # Rename app back
+            mv "KlipPal.app" "KlipPal-${ARCH}.app"
+          done
+
+          ls -la *.dmg
+
+      - name: Notarize DMGs (synchronous)
+        if: ${{ !inputs.dryrun }}
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for ARCH in arm64 x86_64; do
+            DMG_NAME="KlipPal-${{ inputs.version }}-${ARCH}.dmg"
+            echo "Submitting ${DMG_NAME} for notarization (waiting for completion)..."
+
+            # Submit WITH --wait for synchronous notarization
+            xcrun notarytool submit "${DMG_NAME}" \
+                --apple-id "$APPLE_ID" \
+                --password "$APPLE_ID_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" \
+                --wait \
+                --timeout 30m
+
+            echo "::notice::${ARCH} notarization completed successfully"
+          done
+
+      - name: Staple Notarization Tickets
+        if: ${{ !inputs.dryrun }}
+        run: |
+          for ARCH in arm64 x86_64; do
+            DMG_NAME="KlipPal-${{ inputs.version }}-${ARCH}.dmg"
+            echo "Stapling ${DMG_NAME}..."
+
+            xcrun stapler staple "${DMG_NAME}"
+            xcrun stapler validate "${DMG_NAME}"
+
+            echo "::notice::${ARCH} DMG stapled successfully"
+          done
+
+      - name: Calculate Checksums
+        run: |
+          for ARCH in arm64 x86_64; do
+            DMG_NAME="KlipPal-${{ inputs.version }}-${ARCH}.dmg"
+            shasum -a 256 "${DMG_NAME}" > "${DMG_NAME}.sha256"
+            echo "${DMG_NAME}:"
+            cat "${DMG_NAME}.sha256"
+          done
+
+      - name: Create GitHub Release
+        if: ${{ !inputs.dryrun }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ inputs.version }}"
+
+          # Generate changelog from commits since last release
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+          if [ -n "$LAST_TAG" ]; then
+            echo "Generating changelog since $LAST_TAG..."
+            CHANGELOG=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s" --no-merges | grep -v "Generated with Claude Code" || true)
+          else
+            echo "No previous tag found, using recent commits..."
+            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges -20 | grep -v "Generated with Claude Code" || true)
+          fi
+
+          # Create release notes with changelog and installation instructions
+          cat > release-notes.md << EOF
+          ## What's Changed
+
+          ${CHANGELOG:-No significant changes}
+
+          ---
+
+          ## Downloads
+
+          | Architecture | File | Description |
+          |--------------|------|-------------|
+          | Apple Silicon (M1/M2/M3/M4) | \`KlipPal-${VERSION}-arm64.dmg\` | For all Macs with Apple Silicon |
+          | Intel | \`KlipPal-${VERSION}-x86_64.dmg\` | For Intel-based Macs |
+
+          ## Installation
+
+          **Homebrew (recommended):**
+          \`\`\`bash
+          brew install --cask adamtwo/klippal/klippal
+          \`\`\`
+
+          **Manual:**
+          1. Download the appropriate DMG for your Mac:
+             - **Apple Silicon (M1/M2/M3/M4)**: \`KlipPal-${VERSION}-arm64.dmg\`
+             - **Intel**: \`KlipPal-${VERSION}-x86_64.dmg\`
+          2. Open the DMG and drag KlipPal to Applications
+          3. Launch KlipPal and grant Accessibility permission when prompted
+
+          ## Verification
+
+          Verify the download integrity:
+          \`\`\`bash
+          # For Apple Silicon
+          shasum -a 256 -c KlipPal-${VERSION}-arm64.dmg.sha256
+
+          # For Intel
+          shasum -a 256 -c KlipPal-${VERSION}-x86_64.dmg.sha256
+          \`\`\`
+
+          This release is code signed and notarized by Apple.
+          EOF
+
+          # Create release with both DMGs
+          gh release create "v${VERSION}" \
+              --title "KlipPal ${VERSION}" \
+              --notes-file release-notes.md \
+              "KlipPal-${VERSION}-arm64.dmg" \
+              "KlipPal-${VERSION}-arm64.dmg.sha256" \
+              "KlipPal-${VERSION}-x86_64.dmg" \
+              "KlipPal-${VERSION}-x86_64.dmg.sha256"
+
+          echo "::notice::Release created - https://github.com/${{ github.repository }}/releases/tag/v${VERSION}"
+
+      - name: Update Homebrew Tap
+        if: ${{ !inputs.dryrun }}
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="${{ inputs.version }}"
+
+          # Get checksums
+          ARM64_SHA=$(cat "KlipPal-${VERSION}-arm64.dmg.sha256" | awk '{print $1}')
+          X86_64_SHA=$(cat "KlipPal-${VERSION}-x86_64.dmg.sha256" | awk '{print $1}')
+
+          echo "Updating homebrew-klippal tap..."
+          echo "  Version: ${VERSION}"
+          echo "  arm64 SHA: ${ARM64_SHA}"
+          echo "  x86_64 SHA: ${X86_64_SHA}"
+
+          # Clone the tap repo
+          git clone https://x-access-token:${GH_TOKEN}@github.com/adamtwo/homebrew-klippal.git /tmp/homebrew-klippal
+
+          # Update the cask file
+          cat > /tmp/homebrew-klippal/Casks/klippal.rb << EOF
+          cask "klippal" do
+            arch arm: "arm64", intel: "x86_64"
+
+            version "${VERSION}"
+            sha256 arm:   "${ARM64_SHA}",
+                   intel: "${X86_64_SHA}"
+
+            url "https://github.com/adamtwo/klippal/releases/download/v#{version}/KlipPal-#{version}-#{arch}.dmg",
+                verified: "github.com/adamtwo/klippal/"
+            name "KlipPal"
+            desc "Native macOS clipboard manager with local-only storage"
+            homepage "https://github.com/adamtwo/klippal"
+
+            depends_on macos: ">= :ventura"
+
+            app "KlipPal.app"
+
+            zap trash: [
+                  "~/Library/Application Support/KlipPal",
+                  "~/Library/Caches/com.klippal.KlipPal",
+                  "~/Library/Preferences/com.klippal.KlipPal.plist",
+                  "~/Library/Saved Application State/com.klippal.KlipPal.savedState",
+                ]
+          end
+          EOF
+
+          # Commit and push
+          cd /tmp/homebrew-klippal
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/klippal.rb
+          git commit -m "Update klippal to ${VERSION}"
+          git push
+
+          echo "::notice::Homebrew tap updated successfully"
+
+      - name: Dryrun Summary
+        if: ${{ inputs.dryrun }}
+        run: |
+          echo "::notice::Dryrun executed"
+          echo ""
+          echo "=== Dryrun Summary ==="
+          echo "Version: ${{ inputs.version }}"
+          echo ""
+          echo "DMGs created:"
+          for ARCH in arm64 x86_64; do
+            DMG_NAME="KlipPal-${{ inputs.version }}-${ARCH}.dmg"
+            echo "  ${DMG_NAME}: $(du -h ${DMG_NAME} | cut -f1)"
+            echo "  SHA256: $(cat ${DMG_NAME}.sha256)"
+          done
+          echo ""
+          echo "To perform actual release:"
+          echo "1. Configure GitHub secrets (DEVELOPER_ID_CERT_BASE64, etc.)"
+          echo "2. Run workflow with dryrun=false"
+
+      - name: Release Summary
+        if: ${{ !inputs.dryrun }}
+        run: |
+          VERSION="${{ inputs.version }}"
+
+          echo "## Release Created Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "| File | Checksum |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|----------|" >> $GITHUB_STEP_SUMMARY
+
+          for ARCH in arm64 x86_64; do
+            DMG_NAME="KlipPal-${VERSION}-${ARCH}.dmg"
+            CHECKSUM=$(cat "${DMG_NAME}.sha256" | awk '{print $1}')
+            echo "| \`${DMG_NAME}\` | \`${CHECKSUM:0:16}...\` |" >> $GITHUB_STEP_SUMMARY
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Release URL:** https://github.com/${{ github.repository }}/releases/tag/v${VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Homebrew:** \`brew install --cask adamtwo/klippal/klippal\`" >> $GITHUB_STEP_SUMMARY
