@@ -3,11 +3,31 @@ import SwiftUI
 /// Advanced settings view with excluded apps management
 struct AdvancedSettingsView: View {
     @ObservedObject var excludedAppsManager: ExcludedAppsManager
+    @ObservedObject private var preferences = PreferencesManager.shared
     @State private var selectedAppId: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Master toggle section
+            // Search settings section
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle(isOn: $preferences.fuzzySearchEnabled) {
+                    Text("Enable fuzzy search")
+                        .fontWeight(.medium)
+                }
+                .toggleStyle(.switch)
+
+                Text("When enabled, search matches characters in order even if not consecutive (e.g., \"hwd\" matches \"hello world\"). When disabled, only exact and substring matches are used.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 12)
+
+            Divider()
+
+            // Excluded apps section
             VStack(alignment: .leading, spacing: 4) {
                 Toggle(isOn: $excludedAppsManager.isEnabled) {
                     Text("Exclude apps from clipboard history")

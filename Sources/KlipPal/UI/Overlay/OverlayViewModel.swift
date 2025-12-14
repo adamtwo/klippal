@@ -129,6 +129,8 @@ class OverlayViewModel: ObservableObject {
     }
 
     func search(query: String) {
+        // Sync fuzzy search setting from preferences
+        searchEngine.fuzzyMatchingEnabled = PreferencesManager.shared.fuzzySearchEnabled
         searchResults = searchEngine.search(query: query, in: items)
         filteredItems = searchResults.map { $0.item }
 

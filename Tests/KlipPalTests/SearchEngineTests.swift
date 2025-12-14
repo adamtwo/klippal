@@ -177,6 +177,9 @@ final class SearchEngineTests: XCTestCase {
     func testFuzzyMatchFindsPartialMatches() async throws {
         let items = try await loadItems()
 
+        // Ensure fuzzy matching is enabled
+        searchEngine.fuzzyMatchingEnabled = true
+
         // "mgr" should fuzzy match "manager"
         let results = searchEngine.search(query: "mgr", in: items)
 
@@ -189,6 +192,9 @@ final class SearchEngineTests: XCTestCase {
     func testAcronymMatchWorks() async throws {
         let items = try await loadItems()
 
+        // Ensure fuzzy matching is enabled
+        searchEngine.fuzzyMatchingEnabled = true
+
         // "qbf" should match "quick brown fox"
         let results = searchEngine.search(query: "qbf", in: items)
 
@@ -196,6 +202,80 @@ final class SearchEngineTests: XCTestCase {
             result.item.content.contains("quick brown fox")
         }
         XCTAssertTrue(hasMatch, "Acronym search should work")
+    }
+
+    // MARK: - Fuzzy Search Toggle Tests
+
+    func testFuzzyMatchingDisabledDoesNotFindFuzzyMatches() async throws {
+        let items = try await loadItems()
+
+        // Disable fuzzy matching
+        searchEngine.fuzzyMatchingEnabled = false
+
+        // "mgr" should NOT match "manager" when fuzzy is disabled
+        let results = searchEngine.search(query: "mgr", in: items)
+
+        let hasManagerMatch = results.contains { result in
+            result.item.content.lowercased().contains("manager")
+        }
+        XCTAssertFalse(hasManagerMatch, "Fuzzy search disabled should NOT find 'manager' with query 'mgr'")
+    }
+
+    func testFuzzyMatchingDisabledStillFindsExactMatches() async throws {
+        let items = try await loadItems()
+
+        // Disable fuzzy matching
+        searchEngine.fuzzyMatchingEnabled = false
+
+        // Exact substring match should still work
+        let results = searchEngine.search(query: "manager", in: items)
+
+        let hasManagerMatch = results.contains { result in
+            result.item.content.lowercased().contains("manager")
+        }
+        XCTAssertTrue(hasManagerMatch, "Exact substring match should work even with fuzzy disabled")
+    }
+
+    func testFuzzyMatchingDisabledStillFindsPrefixMatches() async throws {
+        let items = try await loadItems()
+
+        // Disable fuzzy matching
+        searchEngine.fuzzyMatchingEnabled = false
+
+        // Prefix match should still work
+        let results = searchEngine.search(query: "Copy", in: items)
+
+        let hasCopyMatch = results.contains { result in
+            result.item.content.lowercased().hasPrefix("copy")
+        }
+        XCTAssertTrue(hasCopyMatch, "Prefix match should work even with fuzzy disabled")
+    }
+
+    func testFuzzyMatchingDisabledAcronymDoesNotMatch() async throws {
+        let items = try await loadItems()
+
+        // Disable fuzzy matching
+        searchEngine.fuzzyMatchingEnabled = false
+
+        // "qbf" should NOT match "quick brown fox" when fuzzy is disabled
+        let results = searchEngine.search(query: "qbf", in: items)
+
+        let hasMatch = results.contains { result in
+            result.item.content.contains("quick brown fox")
+        }
+        XCTAssertFalse(hasMatch, "Acronym search should NOT work when fuzzy is disabled")
+    }
+
+    func testFuzzyMatchingToggleCanBeChanged() {
+        // Default should be true for the SearchEngine instance
+        searchEngine.fuzzyMatchingEnabled = true
+        XCTAssertTrue(searchEngine.fuzzyMatchingEnabled)
+
+        searchEngine.fuzzyMatchingEnabled = false
+        XCTAssertFalse(searchEngine.fuzzyMatchingEnabled)
+
+        searchEngine.fuzzyMatchingEnabled = true
+        XCTAssertTrue(searchEngine.fuzzyMatchingEnabled)
     }
 
     // MARK: - Case Sensitivity Tests

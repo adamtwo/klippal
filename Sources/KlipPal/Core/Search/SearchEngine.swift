@@ -22,6 +22,12 @@ class SearchEngine {
     private let filenameWeight: Double = 1.2  // Filename matches ranked highest for files
     private let sourceAppWeight: Double = 0.7
 
+    /// Whether fuzzy matching is enabled (syncs with preferences)
+    var fuzzyMatchingEnabled: Bool {
+        get { matcher.fuzzyMatchingEnabled }
+        set { matcher.fuzzyMatchingEnabled = newValue }
+    }
+
     /// Searches for items matching the query
     /// - Parameters:
     ///   - query: The search query (empty returns all items)

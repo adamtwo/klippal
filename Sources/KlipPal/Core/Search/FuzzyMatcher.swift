@@ -13,6 +13,9 @@ struct FuzzyMatchResult {
 /// Supports exact match, prefix match, substring match, and character-skipping fuzzy match
 /// Scoring priority: exact > prefix > word boundary > substring > fuzzy
 class FuzzyMatcher {
+    /// Whether fuzzy matching (character-skipping) is enabled
+    /// When disabled, only exact, prefix, word boundary, and substring matches are used
+    var fuzzyMatchingEnabled: Bool = true
 
     // MARK: - Scoring Constants
 
@@ -68,7 +71,8 @@ class FuzzyMatcher {
             return result
         }
 
-        if let result = tryFuzzyMatch(query: lowerQuery, in: text, lowerText: lowerText) {
+        // Only try fuzzy matching if enabled
+        if fuzzyMatchingEnabled, let result = tryFuzzyMatch(query: lowerQuery, in: text, lowerText: lowerText) {
             return result
         }
 

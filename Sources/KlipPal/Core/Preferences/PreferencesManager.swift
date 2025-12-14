@@ -16,6 +16,7 @@ final class PreferencesManager: ObservableObject {
         static let hotkeyModifiers = "hotkeyModifiers"
         static let launchAtLogin = "launchAtLogin"
         static let showInDock = "showInDock"
+        static let fuzzySearchEnabled = "fuzzySearchEnabled"
     }
 
     // MARK: - Default Values
@@ -65,6 +66,13 @@ final class PreferencesManager: ObservableObject {
         }
     }
 
+    /// Whether fuzzy search is enabled (off by default)
+    @Published var fuzzySearchEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(fuzzySearchEnabled, forKey: Keys.fuzzySearchEnabled)
+        }
+    }
+
     // MARK: - Initialization
 
     private init() {
@@ -76,6 +84,7 @@ final class PreferencesManager: ObservableObject {
         hotkeyKeyCode = UInt32(defaults.object(forKey: Keys.hotkeyKeyCode) as? Int ?? Int(Defaults.hotkeyKeyCode))
         hotkeyModifiers = UInt32(defaults.object(forKey: Keys.hotkeyModifiers) as? Int ?? Int(Defaults.hotkeyModifiers))
         launchAtLogin = defaults.bool(forKey: Keys.launchAtLogin)
+        fuzzySearchEnabled = defaults.bool(forKey: Keys.fuzzySearchEnabled) // defaults to false
     }
 
     // MARK: - Launch at Login
@@ -115,6 +124,7 @@ final class PreferencesManager: ObservableObject {
         hotkeyKeyCode = Defaults.hotkeyKeyCode
         hotkeyModifiers = Defaults.hotkeyModifiers
         launchAtLogin = false
+        fuzzySearchEnabled = false
     }
 
     // MARK: - Hotkey Helpers
