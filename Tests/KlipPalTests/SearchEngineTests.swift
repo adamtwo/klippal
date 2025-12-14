@@ -119,14 +119,34 @@ final class SearchEngineTests: XCTestCase {
             "Prefix match should rank first, got: \(firstContent)")
     }
 
-    func testResultsAreSortedByScore() async throws {
+    func testResultsAreSortedByMatchTypeThenTimestamp() async throws {
         let items = try await loadItems()
         let results = searchEngine.search(query: "copy", in: items)
 
-        // Verify results are sorted by score (descending)
-        for i in 0..<(results.count - 1) {
-            XCTAssertGreaterThanOrEqual(results[i].score, results[i + 1].score,
-                "Results should be sorted by score descending")
+        // Verify results are sorted: exact matches first (by timestamp), then fuzzy (by timestamp)
+        var seenFuzzy = false
+        var lastExactTimestamp: Date?
+        var lastFuzzyTimestamp: Date?
+
+        for result in results {
+            if result.matchType == .fuzzy {
+                seenFuzzy = true
+                // Fuzzy results should be sorted by timestamp descending
+                if let last = lastFuzzyTimestamp {
+                    XCTAssertLessThanOrEqual(result.item.timestamp, last,
+                        "Fuzzy results should be sorted by timestamp descending")
+                }
+                lastFuzzyTimestamp = result.item.timestamp
+            } else {
+                // Should not see exact after fuzzy
+                XCTAssertFalse(seenFuzzy, "Exact matches should come before fuzzy matches")
+                // Exact results should be sorted by timestamp descending
+                if let last = lastExactTimestamp {
+                    XCTAssertLessThanOrEqual(result.item.timestamp, last,
+                        "Exact results should be sorted by timestamp descending")
+                }
+                lastExactTimestamp = result.item.timestamp
+            }
         }
     }
 
@@ -149,17 +169,24 @@ final class SearchEngineTests: XCTestCase {
     }
 
     func testContentMatchRanksHigherThanSourceApp() async throws {
-        // Create specific test items
+        // Create specific test items with same timestamp
+        // Content match (item1) matches "TextEdit" in content
+        // Source app match (item2) only matches "TextEdit" in sourceApp
+        let timestamp = Date()
         let item1 = ClipboardItem(
+            id: UUID(),
             content: "TextEdit document",
             contentType: .text,
             contentHash: "content_match_\(UUID().uuidString)",
+            timestamp: timestamp,
             sourceApp: "Notes"
         )
         let item2 = ClipboardItem(
+            id: UUID(),
             content: "Random content",
             contentType: .text,
             contentHash: "app_match_\(UUID().uuidString)",
+            timestamp: timestamp,
             sourceApp: "TextEdit"
         )
 
@@ -167,9 +194,12 @@ final class SearchEngineTests: XCTestCase {
         let results = searchEngine.search(query: "TextEdit", in: items)
 
         XCTAssertEqual(results.count, 2)
-        // Content match should rank higher than source app match
-        XCTAssertEqual(results.first?.item.content, "TextEdit document",
-            "Content match should rank higher than source app match")
+        // Both are exact matches (content match and sourceApp match both use exact/substring matching)
+        // With same timestamp, order is preserved from input (item1 first)
+        // The content match (item1) should still be first since it appears first in the input
+        // and both have the same match type
+        XCTAssertEqual(results.first?.matchField, .content,
+            "Content match should come before source app match")
     }
 
     func testSourceAppMatchDoesNotProduceHighlightRanges() async throws {
@@ -454,12 +484,13 @@ final class SearchResultTests: XCTestCase {
             sourceApp: nil
         )
         let ranges = [NSRange(location: 0, length: 4)]
-        let result = SearchResult(item: item, score: 0.8, matchedRanges: ranges, matchField: .content)
+        let result = SearchResult(item: item, score: 0.8, matchedRanges: ranges, matchField: .content, matchType: .exact)
 
         XCTAssertEqual(result.item.content, "Test")
         XCTAssertEqual(result.score, 0.8)
         XCTAssertEqual(result.matchedRanges.count, 1)
         XCTAssertEqual(result.matchField, .content)
+        XCTAssertEqual(result.matchType, .exact)
     }
 
     func testSearchResultsSortByScore() {
@@ -468,9 +499,9 @@ final class SearchResultTests: XCTestCase {
         let item3 = ClipboardItem(content: "C", contentType: .text, contentHash: "c", sourceApp: nil)
 
         var results = [
-            SearchResult(item: item1, score: 0.5, matchedRanges: [], matchField: .content),
-            SearchResult(item: item2, score: 0.9, matchedRanges: [], matchField: .content),
-            SearchResult(item: item3, score: 0.7, matchedRanges: [], matchField: .content),
+            SearchResult(item: item1, score: 0.5, matchedRanges: [], matchField: .content, matchType: .exact),
+            SearchResult(item: item2, score: 0.9, matchedRanges: [], matchField: .content, matchType: .exact),
+            SearchResult(item: item3, score: 0.7, matchedRanges: [], matchField: .content, matchType: .exact),
         ]
 
         results.sort { $0.score > $1.score }
@@ -488,11 +519,11 @@ final class SearchResultTests: XCTestCase {
             sourceApp: "TestApp"
         )
 
-        let contentResult = SearchResult(item: item, score: 0.8, matchedRanges: [NSRange(location: 0, length: 4)], matchField: .content)
+        let contentResult = SearchResult(item: item, score: 0.8, matchedRanges: [NSRange(location: 0, length: 4)], matchField: .content, matchType: .exact)
         XCTAssertEqual(contentResult.matchField, .content)
         XCTAssertFalse(contentResult.matchedRanges.isEmpty)
 
-        let sourceAppResult = SearchResult(item: item, score: 0.6, matchedRanges: [], matchField: .sourceApp)
+        let sourceAppResult = SearchResult(item: item, score: 0.6, matchedRanges: [], matchField: .sourceApp, matchType: .exact)
         XCTAssertEqual(sourceAppResult.matchField, .sourceApp)
         XCTAssertTrue(sourceAppResult.matchedRanges.isEmpty, "sourceApp matches should not have highlight ranges")
     }

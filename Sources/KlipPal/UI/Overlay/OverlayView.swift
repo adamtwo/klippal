@@ -101,6 +101,11 @@ struct OverlayView: View {
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             ForEach(Array(viewModel.filteredItems.enumerated()), id: \.element.id) { index, item in
+                                // Show separator before the first fuzzy result
+                                if index == viewModel.fuzzyResultsStartIndex {
+                                    FuzzyResultsSeparatorView()
+                                }
+
                                 ClipboardItemRowView(
                                     item: item,
                                     isSelected: index == viewModel.selectedIndex,
@@ -258,6 +263,38 @@ struct KeyboardHintView: View {
     }
 }
 
+// MARK: - Fuzzy Results Separator View
+
+/// Separator shown between exact matches and fuzzy matches
+struct FuzzyResultsSeparatorView: View {
+    @ObservedObject private var preferences = PreferencesManager.shared
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Rectangle()
+                .fill(Color.secondary.opacity(0.3))
+                .frame(height: 1)
+
+            Text("Fuzzy Search Results")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .layoutPriority(1)
+
+            Toggle("", isOn: $preferences.fuzzySearchEnabled)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .controlSize(.mini)
+
+            Rectangle()
+                .fill(Color.secondary.opacity(0.3))
+                .frame(height: 1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .accessibilityLabel("Fuzzy search results section")
+    }
+}
+
 // MARK: - Fuzzy Search Hint View
 
 /// Hint shown when fuzzy search is disabled and user is searching
@@ -266,7 +303,7 @@ struct FuzzySearchHintView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            Text("Enable fuzzy search for more results")
+            Text("Enable fuzzy search for more results.")
                 .font(.caption)
                 .foregroundColor(.secondary)
 

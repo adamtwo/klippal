@@ -160,6 +160,30 @@ class OverlayViewModel: ObservableObject {
         return searchResults[index].matchedRanges
     }
 
+    /// Gets the match type for a result at a given index
+    func matchType(at index: Int) -> MatchType? {
+        guard index < searchResults.count else { return nil }
+        return searchResults[index].matchType
+    }
+
+    /// Returns the index where fuzzy results begin, or nil if there are no fuzzy results
+    var fuzzyResultsStartIndex: Int? {
+        // Find the first fuzzy result
+        guard let firstFuzzyIndex = searchResults.firstIndex(where: { $0.matchType == .fuzzy }) else {
+            return nil
+        }
+        // Only show separator if there are also exact matches before it
+        guard firstFuzzyIndex > 0 else { return nil }
+        return firstFuzzyIndex
+    }
+
+    /// Whether the current search has both exact and fuzzy results (for showing separator)
+    var hasBothExactAndFuzzyResults: Bool {
+        let hasExact = searchResults.contains { $0.matchType == .exact }
+        let hasFuzzy = searchResults.contains { $0.matchType == .fuzzy }
+        return hasExact && hasFuzzy
+    }
+
     func pasteItem(_ item: ClipboardItem) {
         print("📋 Pasting item: \(item.content.prefix(50))...")
 

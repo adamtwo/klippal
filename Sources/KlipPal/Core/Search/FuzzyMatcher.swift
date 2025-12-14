@@ -1,5 +1,13 @@
 import Foundation
 
+/// Type of match found by the fuzzy matcher
+enum MatchType {
+    /// Exact, prefix, word boundary, or substring match (consecutive characters)
+    case exact
+    /// Fuzzy match with character-skipping
+    case fuzzy
+}
+
 /// Result of a fuzzy match operation
 struct FuzzyMatchResult {
     /// Match score from 0.0 (no match) to 1.0 (perfect match)
@@ -7,6 +15,9 @@ struct FuzzyMatchResult {
 
     /// Ranges in the original text that matched the query
     let matchedRanges: [NSRange]
+
+    /// Type of match (exact or fuzzy)
+    let matchType: MatchType
 }
 
 /// Fuzzy string matching algorithm
@@ -86,7 +97,7 @@ class FuzzyMatcher {
         guard lowerText == query else { return nil }
 
         let range = NSRange(location: 0, length: text.utf16.count)
-        return FuzzyMatchResult(score: Score.exactMatch, matchedRanges: [range])
+        return FuzzyMatchResult(score: Score.exactMatch, matchedRanges: [range], matchType: .exact)
     }
 
     /// Prefix match: text starts with query
@@ -97,7 +108,7 @@ class FuzzyMatcher {
         let lengthPenalty = Double(text.count) * Score.lengthPenaltyFactor
         let score = max(0.1, Score.prefixMatch - lengthPenalty)
 
-        return FuzzyMatchResult(score: score, matchedRanges: [range])
+        return FuzzyMatchResult(score: score, matchedRanges: [range], matchType: .exact)
     }
 
     /// Word boundary match: query matches at the start of a word
@@ -120,7 +131,7 @@ class FuzzyMatcher {
                     let nsRange = NSRange(location: location, length: query.utf16.count)
                     let lengthPenalty = Double(text.count) * Score.lengthPenaltyFactor
                     let score = max(0.1, Score.wordBoundaryMatch - lengthPenalty)
-                    return FuzzyMatchResult(score: score, matchedRanges: [nsRange])
+                    return FuzzyMatchResult(score: score, matchedRanges: [nsRange], matchType: .exact)
                 }
 
                 currentLocation = location + word.count
@@ -143,7 +154,7 @@ class FuzzyMatcher {
         let positionPenalty = Double(location) * Score.lengthPenaltyFactor * 0.5
         let score = max(0.1, Score.substringMatch - lengthPenalty - positionPenalty)
 
-        return FuzzyMatchResult(score: score, matchedRanges: [nsRange])
+        return FuzzyMatchResult(score: score, matchedRanges: [nsRange], matchType: .exact)
     }
 
     /// Fuzzy match: characters appear in order but not necessarily consecutive
@@ -198,7 +209,7 @@ class FuzzyMatcher {
         // Merge consecutive ranges for cleaner output
         let mergedRanges = mergeConsecutiveRanges(matchedRanges)
 
-        return FuzzyMatchResult(score: score, matchedRanges: mergedRanges)
+        return FuzzyMatchResult(score: score, matchedRanges: mergedRanges, matchType: .fuzzy)
     }
 
     // MARK: - Helpers

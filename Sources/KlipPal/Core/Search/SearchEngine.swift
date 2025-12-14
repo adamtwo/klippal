@@ -21,6 +21,9 @@ struct SearchResult {
 
     /// Which field the match was found in
     let matchField: SearchMatchField
+
+    /// Type of match (exact or fuzzy)
+    let matchType: MatchType
 }
 
 /// Search engine that coordinates fuzzy matching across clipboard items
@@ -43,14 +46,15 @@ class SearchEngine {
     /// - Parameters:
     ///   - query: The search query (empty returns all items)
     ///   - items: The items to search through
-    /// - Returns: Sorted array of SearchResult, highest score first
+    /// - Returns: Sorted array of SearchResult - exact matches by timestamp (newest first),
+    ///            then fuzzy matches by timestamp (newest first)
     func search(query: String, in items: [ClipboardItem]) -> [SearchResult] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespaces)
 
-        // Empty query returns all items with default score
+        // Empty query returns all items sorted by timestamp (newest first)
         if trimmedQuery.isEmpty {
             return items.map { item in
-                SearchResult(item: item, score: 1.0, matchedRanges: [], matchField: .content)
+                SearchResult(item: item, score: 1.0, matchedRanges: [], matchField: .content, matchType: .exact)
             }
         }
 
@@ -62,8 +66,15 @@ class SearchEngine {
             }
         }
 
-        // Sort by score descending
-        results.sort { $0.score > $1.score }
+        // Sort: exact matches first (by timestamp, newest first), then fuzzy matches (by timestamp, newest first)
+        results.sort { lhs, rhs in
+            // First, separate exact from fuzzy
+            if lhs.matchType != rhs.matchType {
+                return lhs.matchType == .exact  // Exact matches come first
+            }
+            // Within same match type, sort by timestamp (newest first)
+            return lhs.item.timestamp > rhs.item.timestamp
+        }
 
         return results
     }
@@ -74,6 +85,7 @@ class SearchEngine {
         var bestScore: Double = 0
         var bestRanges: [NSRange] = []
         var bestField: SearchMatchField = .content
+        var bestMatchType: MatchType = .exact
 
         // For file URLs, search behavior depends on fuzzy setting
         if item.contentType == .fileURL {
@@ -85,6 +97,7 @@ class SearchEngine {
                     bestScore = weightedScore
                     bestRanges = filenameMatch.matchedRanges
                     bestField = .filename
+                    bestMatchType = filenameMatch.matchType
                 }
             }
 
@@ -97,6 +110,7 @@ class SearchEngine {
                     // Don't use ranges from full path - UI displays filename only
                     bestRanges = []
                     bestField = .content
+                    bestMatchType = contentMatch.matchType
                 }
             }
         } else {
@@ -107,6 +121,7 @@ class SearchEngine {
                     bestScore = weightedScore
                     bestRanges = contentMatch.matchedRanges
                     bestField = .content
+                    bestMatchType = contentMatch.matchType
                 }
             }
         }
@@ -122,11 +137,12 @@ class SearchEngine {
                 // Don't use ranges from sourceApp match - they don't apply to content
                 bestRanges = []
                 bestField = .sourceApp
+                bestMatchType = appMatch.matchType
             }
         }
 
         guard bestScore > 0 else { return nil }
 
-        return SearchResult(item: item, score: bestScore, matchedRanges: bestRanges, matchField: bestField)
+        return SearchResult(item: item, score: bestScore, matchedRanges: bestRanges, matchField: bestField, matchType: bestMatchType)
     }
 }

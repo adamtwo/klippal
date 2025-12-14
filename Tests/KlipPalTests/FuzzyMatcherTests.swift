@@ -261,13 +261,13 @@ final class FuzzyMatcherTests: XCTestCase {
 final class FuzzyMatchResultTests: XCTestCase {
 
     func testResultContainsScore() {
-        let result = FuzzyMatchResult(score: 0.8, matchedRanges: [])
+        let result = FuzzyMatchResult(score: 0.8, matchedRanges: [], matchType: .exact)
         XCTAssertEqual(result.score, 0.8)
     }
 
     func testResultContainsRanges() {
         let ranges = [NSRange(location: 0, length: 3), NSRange(location: 5, length: 2)]
-        let result = FuzzyMatchResult(score: 0.5, matchedRanges: ranges)
+        let result = FuzzyMatchResult(score: 0.5, matchedRanges: ranges, matchType: .exact)
 
         XCTAssertEqual(result.matchedRanges.count, 2)
         XCTAssertEqual(result.matchedRanges[0].location, 0)
@@ -275,8 +275,8 @@ final class FuzzyMatchResultTests: XCTestCase {
     }
 
     func testResultComparable() {
-        let result1 = FuzzyMatchResult(score: 0.8, matchedRanges: [])
-        let result2 = FuzzyMatchResult(score: 0.5, matchedRanges: [])
+        let result1 = FuzzyMatchResult(score: 0.8, matchedRanges: [], matchType: .exact)
+        let result2 = FuzzyMatchResult(score: 0.5, matchedRanges: [], matchType: .fuzzy)
 
         XCTAssertGreaterThan(result1.score, result2.score)
     }

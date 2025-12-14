@@ -302,6 +302,131 @@ final class FuzzySearchSettingTests: XCTestCase {
         let results = searchEngine.search(query: "   ", in: items)
         XCTAssertEqual(results.count, 2, "Whitespace query should return all items")
     }
+
+    // MARK: - Match Type Sorting Tests
+
+    func testExactMatchesComeBeforeFuzzyMatches() {
+        searchEngine.fuzzyMatchingEnabled = true
+
+        // Create items with timestamps
+        let now = Date()
+        let oneHourAgo = now.addingTimeInterval(-3600)
+
+        // Item that will have an exact match (substring "hello")
+        let exactMatchItem = ClipboardItem(
+            id: UUID(),
+            content: "hello world",
+            contentType: .text,
+            contentHash: "exact1",
+            timestamp: oneHourAgo  // Older
+        )
+
+        // Item that will have a fuzzy match (h...l...o)
+        let fuzzyMatchItem = ClipboardItem(
+            id: UUID(),
+            content: "help layout options",  // "hlo" fuzzy matches "hello"
+            contentType: .text,
+            contentHash: "fuzzy1",
+            timestamp: now  // Newer
+        )
+
+        let items = [fuzzyMatchItem, exactMatchItem]
+        let results = searchEngine.search(query: "hello", in: items)
+
+        XCTAssertEqual(results.count, 2, "Should find both items")
+        // Even though fuzzyMatchItem is newer, exactMatchItem should come first
+        XCTAssertEqual(results[0].matchType, .exact, "Exact match should come first")
+        XCTAssertEqual(results[1].matchType, .fuzzy, "Fuzzy match should come second")
+        XCTAssertEqual(results[0].item.content, "hello world")
+    }
+
+    func testExactMatchesSortedByTimestampNewestFirst() {
+        searchEngine.fuzzyMatchingEnabled = true
+
+        let now = Date()
+        let oneHourAgo = now.addingTimeInterval(-3600)
+        let twoHoursAgo = now.addingTimeInterval(-7200)
+
+        let item1 = ClipboardItem(
+            id: UUID(),
+            content: "hello again",
+            contentType: .text,
+            contentHash: "t1",
+            timestamp: twoHoursAgo  // Oldest
+        )
+        let item2 = ClipboardItem(
+            id: UUID(),
+            content: "say hello there",
+            contentType: .text,
+            contentHash: "t2",
+            timestamp: now  // Newest
+        )
+        let item3 = ClipboardItem(
+            id: UUID(),
+            content: "hello world",
+            contentType: .text,
+            contentHash: "t3",
+            timestamp: oneHourAgo  // Middle
+        )
+
+        let items = [item1, item2, item3]
+        let results = searchEngine.search(query: "hello", in: items)
+
+        XCTAssertEqual(results.count, 3)
+        // All are exact matches, should be sorted by timestamp newest first
+        XCTAssertEqual(results[0].item.timestamp, now, "Newest should be first")
+        XCTAssertEqual(results[1].item.timestamp, oneHourAgo, "Middle should be second")
+        XCTAssertEqual(results[2].item.timestamp, twoHoursAgo, "Oldest should be last")
+    }
+
+    func testFuzzyMatchesSortedByTimestampNewestFirst() {
+        searchEngine.fuzzyMatchingEnabled = true
+
+        let now = Date()
+        let oneHourAgo = now.addingTimeInterval(-3600)
+
+        // Items that will only fuzzy match "abc" (a...b...c)
+        let item1 = ClipboardItem(
+            id: UUID(),
+            content: "a_better_code",  // abc fuzzy
+            contentType: .text,
+            contentHash: "f1",
+            timestamp: oneHourAgo  // Older
+        )
+        let item2 = ClipboardItem(
+            id: UUID(),
+            content: "another_big_cat",  // abc fuzzy
+            contentType: .text,
+            contentHash: "f2",
+            timestamp: now  // Newer
+        )
+
+        let items = [item1, item2]
+        let results = searchEngine.search(query: "abc", in: items)
+
+        XCTAssertEqual(results.count, 2)
+        // Both are fuzzy matches, should be sorted by timestamp newest first
+        XCTAssertEqual(results[0].item.timestamp, now, "Newer fuzzy match should be first")
+        XCTAssertEqual(results[1].item.timestamp, oneHourAgo, "Older fuzzy match should be second")
+    }
+
+    func testMatchTypeIsTrackedCorrectly() {
+        searchEngine.fuzzyMatchingEnabled = true
+
+        let item = ClipboardItem(
+            content: "hello world",
+            contentType: .text,
+            contentHash: "mt1"
+        )
+
+        // Exact substring match
+        let exactResults = searchEngine.search(query: "hello", in: [item])
+        XCTAssertEqual(exactResults.first?.matchType, .exact)
+
+        // Fuzzy match (h...w...d)
+        let fuzzyResults = searchEngine.search(query: "hwd", in: [item])
+        XCTAssertEqual(fuzzyResults.first?.matchType, .fuzzy)
+    }
 }
 
 // MARK: - ViewModel Search Query Persistence Tests
