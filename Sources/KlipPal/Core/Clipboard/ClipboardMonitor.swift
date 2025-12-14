@@ -14,12 +14,12 @@ class ClipboardMonitor: ObservableObject {
     private let storage: StorageEngineProtocol
     private let deduplicator: ClipboardDeduplicator
     private let blobStorage: BlobStorageManager?
-    private let excludedAppsManager: ExcludedAppsManager
+    private let excludedAppsManager: ExcludedAppsManager?
 
     /// Polling interval in seconds (0.5s = 500ms)
     private let pollingInterval: TimeInterval = 0.5
 
-    init(storage: StorageEngineProtocol, blobStorage: BlobStorageManager? = nil, excludedAppsManager: ExcludedAppsManager = .shared) {
+    init(storage: StorageEngineProtocol, blobStorage: BlobStorageManager? = nil, excludedAppsManager: ExcludedAppsManager? = nil) {
         self.storage = storage
         self.deduplicator = ClipboardDeduplicator(storage: storage)
         self.blobStorage = blobStorage
@@ -60,8 +60,9 @@ class ClipboardMonitor: ObservableObject {
         // Get source application first to check exclusion
         let sourceApp = ClipboardContentExtractor.getFrontmostApp()
 
-        // Check if app is excluded
-        if excludedAppsManager.shouldExclude(appName: sourceApp) {
+        // Check if app is excluded (use shared instance if not provided)
+        let manager = excludedAppsManager ?? ExcludedAppsManager.shared
+        if manager.shouldExclude(appName: sourceApp) {
             print("⏭️ Skipping clipboard from excluded app: \(sourceApp ?? "unknown")")
             return
         }
