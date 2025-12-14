@@ -91,37 +91,30 @@ struct OverlayView: View {
                     ? "No clipboard history. Copy text, images, or files to see them here."
                     : "No results found for \(searchText)")
             } else {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(Array(viewModel.filteredItems.enumerated()), id: \.element.id) { index, item in
-                                ClipboardItemRowView(
-                                    item: item,
-                                    isSelected: index == viewModel.selectedIndex,
-                                    highlightRanges: viewModel.matchedRanges(at: index),
-                                    thumbnailImage: viewModel.thumbnail(for: item),
-                                    onDelete: { viewModel.deleteItem(item) },
-                                    onSingleClick: {
-                                        // Single-click: just select and copy
-                                        viewModel.selectedIndex = index
-                                        copyToClipboard(item)
-                                    },
-                                    onDoubleClick: {
-                                        // Double-click: copy, close, and paste
-                                        viewModel.selectedIndex = index
-                                        pasteItem(item)
-                                    },
-                                    onLoadFullImage: {
-                                        await viewModel.loadFullImage(for: item)
-                                    }
-                                )
-                                .id(item.id)
-                            }
-                        }
-                    }
-                    .onChange(of: viewModel.selectedIndex) { newValue in
-                        if newValue < viewModel.filteredItems.count {
-                            proxy.scrollTo(viewModel.filteredItems[newValue].id, anchor: .center)
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(viewModel.filteredItems.enumerated()), id: \.element.id) { index, item in
+                            ClipboardItemRowView(
+                                item: item,
+                                isSelected: index == viewModel.selectedIndex,
+                                highlightRanges: viewModel.matchedRanges(at: index),
+                                thumbnailImage: viewModel.thumbnail(for: item),
+                                onDelete: { viewModel.deleteItem(item) },
+                                onSingleClick: {
+                                    // Single-click: just select and copy
+                                    viewModel.selectedIndex = index
+                                    copyToClipboard(item)
+                                },
+                                onDoubleClick: {
+                                    // Double-click: copy, close, and paste
+                                    viewModel.selectedIndex = index
+                                    pasteItem(item)
+                                },
+                                onLoadFullImage: {
+                                    await viewModel.loadFullImage(for: item)
+                                }
+                            )
+                            .id(item.id)
                         }
                     }
                 }
