@@ -10,6 +10,8 @@ class OverlayViewModel: ObservableObject {
     @Published var searchResults: [SearchResult] = []
     @Published var selectedIndex: Int = 0
     @Published var isSearchFieldFocused: Bool = false
+    /// Triggered when keyboard navigation occurs, to scroll the selected item into view
+    @Published var scrollToSelection: UUID?
     @Published var thumbnailCache: [String: NSImage] = [:]
     @Published var fullImageCache: [String: NSImage] = [:]
 
@@ -168,12 +170,20 @@ class OverlayViewModel: ObservableObject {
         guard !filteredItems.isEmpty else { return }
         selectedIndex = min(selectedIndex + 1, filteredItems.count - 1)
         print("⌨️ Selected index: \(selectedIndex)")
+        triggerScrollToSelection()
     }
 
     func selectPrevious() {
         guard !filteredItems.isEmpty else { return }
         selectedIndex = max(selectedIndex - 1, 0)
         print("⌨️ Selected index: \(selectedIndex)")
+        triggerScrollToSelection()
+    }
+
+    /// Triggers scroll to keep selected item visible (called only for keyboard navigation)
+    private func triggerScrollToSelection() {
+        guard selectedIndex < filteredItems.count else { return }
+        scrollToSelection = filteredItems[selectedIndex].id
     }
 
     func pasteSelected() {
