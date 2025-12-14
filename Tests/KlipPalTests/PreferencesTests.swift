@@ -11,6 +11,7 @@ final class PreferencesTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "hotkeyKeyCode")
         UserDefaults.standard.removeObject(forKey: "hotkeyModifiers")
         UserDefaults.standard.removeObject(forKey: "launchAtLogin")
+        UserDefaults.standard.removeObject(forKey: "fuzzySearchEnabled")
     }
 
     // MARK: - PreferencesManager Tests
@@ -26,6 +27,7 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(prefs.retentionDays, 30, "Default retention days should be 30")
         XCTAssertEqual(prefs.hotkeyKeyCode, 9, "Default hotkey should be 'V' (keycode 9)")
         XCTAssertFalse(prefs.launchAtLogin, "Launch at login should be false by default")
+        XCTAssertFalse(prefs.fuzzySearchEnabled, "Fuzzy search should be disabled by default")
     }
 
     @MainActor
@@ -70,12 +72,55 @@ final class PreferencesTests: XCTestCase {
         // Change values
         prefs.historyLimit = 100
         prefs.retentionDays = 7
+        prefs.fuzzySearchEnabled = true
 
         // Reset
         prefs.resetToDefaults()
 
         XCTAssertEqual(prefs.historyLimit, 500, "History limit should reset to 500")
         XCTAssertEqual(prefs.retentionDays, 30, "Retention days should reset to 30")
+        XCTAssertFalse(prefs.fuzzySearchEnabled, "Fuzzy search should reset to disabled")
+    }
+
+    // MARK: - Fuzzy Search Preference Tests
+
+    @MainActor
+    func testFuzzySearchEnabledDefaultsToFalse() async throws {
+        // Clear any existing value
+        UserDefaults.standard.removeObject(forKey: "fuzzySearchEnabled")
+
+        // UserDefaults.bool returns false for missing keys
+        let value = UserDefaults.standard.bool(forKey: "fuzzySearchEnabled")
+        XCTAssertFalse(value, "Fuzzy search should default to false when not set")
+    }
+
+    @MainActor
+    func testFuzzySearchEnabledPersistsToUserDefaults() async throws {
+        let prefs = PreferencesManager.shared
+
+        prefs.fuzzySearchEnabled = true
+
+        let saved = UserDefaults.standard.bool(forKey: "fuzzySearchEnabled")
+        XCTAssertTrue(saved, "Fuzzy search enabled should be persisted to UserDefaults")
+
+        prefs.fuzzySearchEnabled = false
+
+        let savedFalse = UserDefaults.standard.bool(forKey: "fuzzySearchEnabled")
+        XCTAssertFalse(savedFalse, "Fuzzy search disabled should be persisted to UserDefaults")
+    }
+
+    @MainActor
+    func testFuzzySearchEnabledCanBeToggled() async throws {
+        let prefs = PreferencesManager.shared
+
+        prefs.fuzzySearchEnabled = false
+        XCTAssertFalse(prefs.fuzzySearchEnabled)
+
+        prefs.fuzzySearchEnabled = true
+        XCTAssertTrue(prefs.fuzzySearchEnabled)
+
+        prefs.fuzzySearchEnabled = false
+        XCTAssertFalse(prefs.fuzzySearchEnabled)
     }
 
     // MARK: - PreferencesWindowController Tests

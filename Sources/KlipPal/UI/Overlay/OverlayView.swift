@@ -3,11 +3,17 @@ import SwiftUI
 /// Main overlay view showing clipboard history with search
 struct OverlayView: View {
     @ObservedObject var viewModel: OverlayViewModel
+    @ObservedObject private var preferences = PreferencesManager.shared
     @State private var searchText = ""
     @FocusState private var isSearchFieldFocused: Bool
 
     init(viewModel: OverlayViewModel) {
         self.viewModel = viewModel
+    }
+
+    /// Whether to show fuzzy search hint (search active, fuzzy disabled)
+    private var shouldShowFuzzySearchHint: Bool {
+        !searchText.isEmpty && !preferences.fuzzySearchEnabled
     }
 
     var body: some View {
@@ -117,6 +123,12 @@ struct OverlayView: View {
                                 )
                                 .id(item.id)
                             }
+
+                            // Fuzzy search hint at bottom of results
+                            if shouldShowFuzzySearchHint {
+                                FuzzySearchHintView(isEnabled: $preferences.fuzzySearchEnabled)
+                                    .padding(.top, 8)
+                            }
                         }
                     }
                     .onChange(of: viewModel.scrollToSelection) { itemId in
@@ -179,6 +191,11 @@ struct OverlayView: View {
         .background(Color(NSColor.windowBackgroundColor))
         .cornerRadius(12)
         .onAppear {
+            // Sync search query to ViewModel before loading
+            // (ViewModel will re-apply search after loading items)
+            if !searchText.isEmpty {
+                viewModel.search(query: searchText)
+            }
             viewModel.loadItems()
             // Focus the search field when the overlay appears
             isSearchFieldFocused = true
@@ -186,6 +203,12 @@ struct OverlayView: View {
         }
         .onChange(of: searchText) { newValue in
             viewModel.search(query: newValue)
+        }
+        .onChange(of: preferences.fuzzySearchEnabled) { _ in
+            // Re-run search when fuzzy setting changes
+            if !searchText.isEmpty {
+                viewModel.search(query: searchText)
+            }
         }
         .onChange(of: isSearchFieldFocused) { newValue in
             print("🔍 Search field focus changed: \(newValue)")
@@ -232,5 +255,27 @@ struct KeyboardHintView: View {
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
         }
+    }
+}
+
+// MARK: - Fuzzy Search Hint View
+
+/// Hint shown when fuzzy search is disabled and user is searching
+struct FuzzySearchHintView: View {
+    @Binding var isEnabled: Bool
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text("Enable fuzzy search for more results")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            Toggle("", isOn: $isEnabled)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .controlSize(.small)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
     }
 }

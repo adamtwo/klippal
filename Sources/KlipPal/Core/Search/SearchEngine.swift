@@ -1,5 +1,12 @@
 import Foundation
 
+/// Which field the search matched on
+enum SearchMatchField {
+    case content
+    case filename
+    case sourceApp
+}
+
 /// Result of a search operation containing the matched item and metadata
 struct SearchResult {
     /// The clipboard item that matched
@@ -9,7 +16,11 @@ struct SearchResult {
     let score: Double
 
     /// Ranges in the content that matched (for highlighting)
+    /// Only valid when matchField is .content or .filename
     let matchedRanges: [NSRange]
+
+    /// Which field the match was found in
+    let matchField: SearchMatchField
 }
 
 /// Search engine that coordinates fuzzy matching across clipboard items
@@ -39,7 +50,7 @@ class SearchEngine {
         // Empty query returns all items with default score
         if trimmedQuery.isEmpty {
             return items.map { item in
-                SearchResult(item: item, score: 1.0, matchedRanges: [])
+                SearchResult(item: item, score: 1.0, matchedRanges: [], matchField: .content)
             }
         }
 
@@ -62,42 +73,60 @@ class SearchEngine {
     private func matchItem(query: String, item: ClipboardItem) -> SearchResult? {
         var bestScore: Double = 0
         var bestRanges: [NSRange] = []
+        var bestField: SearchMatchField = .content
 
-        // Try matching content
-        if let contentMatch = matcher.match(query: query, in: item.content) {
-            let weightedScore = contentMatch.score * contentWeight
-            if weightedScore > bestScore {
-                bestScore = weightedScore
-                bestRanges = contentMatch.matchedRanges
+        // For file URLs, search behavior depends on fuzzy setting
+        if item.contentType == .fileURL {
+            // Always try matching the filename (what the user sees)
+            if let filename = item.displayFilename,
+               let filenameMatch = matcher.match(query: query, in: filename) {
+                let weightedScore = filenameMatch.score * filenameWeight
+                if weightedScore > bestScore {
+                    bestScore = weightedScore
+                    bestRanges = filenameMatch.matchedRanges
+                    bestField = .filename
+                }
+            }
+
+            // Only search full path when fuzzy search is enabled
+            if fuzzyMatchingEnabled,
+               let contentMatch = matcher.match(query: query, in: item.content) {
+                let weightedScore = contentMatch.score * contentWeight
+                if weightedScore > bestScore {
+                    bestScore = weightedScore
+                    // Don't use ranges from full path - UI displays filename only
+                    bestRanges = []
+                    bestField = .content
+                }
+            }
+        } else {
+            // For non-file items, always try matching content
+            if let contentMatch = matcher.match(query: query, in: item.content) {
+                let weightedScore = contentMatch.score * contentWeight
+                if weightedScore > bestScore {
+                    bestScore = weightedScore
+                    bestRanges = contentMatch.matchedRanges
+                    bestField = .content
+                }
             }
         }
 
-        // For file URLs, also try matching the filename (what the user sees)
-        if item.contentType == .fileURL,
-           let filename = item.displayFilename,
-           let filenameMatch = matcher.match(query: query, in: filename) {
-            let weightedScore = filenameMatch.score * filenameWeight
-            if weightedScore > bestScore {
-                bestScore = weightedScore
-                // Return ranges relative to the filename for highlighting
-                bestRanges = filenameMatch.matchedRanges
-            }
-        }
-
-        // Try matching source app
-        if let sourceApp = item.sourceApp,
+        // Try matching source app (only when fuzzy search is enabled)
+        // When fuzzy search is disabled, users expect strict content matching only
+        if fuzzyMatchingEnabled,
+           let sourceApp = item.sourceApp,
            let appMatch = matcher.match(query: query, in: sourceApp) {
             let weightedScore = appMatch.score * sourceAppWeight
             if weightedScore > bestScore {
                 bestScore = weightedScore
-                // Note: ranges are for sourceApp, not content
-                // For highlighting, we might want to track which field matched
-                bestRanges = appMatch.matchedRanges
+                // Don't use ranges from sourceApp match - they don't apply to content
+                bestRanges = []
+                bestField = .sourceApp
             }
         }
 
         guard bestScore > 0 else { return nil }
 
-        return SearchResult(item: item, score: bestScore, matchedRanges: bestRanges)
+        return SearchResult(item: item, score: bestScore, matchedRanges: bestRanges, matchField: bestField)
     }
 }

@@ -15,6 +15,9 @@ class OverlayViewModel: ObservableObject {
     @Published var thumbnailCache: [String: NSImage] = [:]
     @Published var fullImageCache: [String: NSImage] = [:]
 
+    /// Current search query - stored to re-apply after reloading items
+    private var currentSearchQuery: String = ""
+
     private let storage: SQLiteStorageEngine
     private let blobStorage: BlobStorageManager?
     private let pasteManager: PasteManager
@@ -57,7 +60,14 @@ class OverlayViewModel: ObservableObject {
             do {
                 let limit = PreferencesManager.shared.historyLimit
                 items = try await storage.fetchItems(limit: limit, favoriteOnly: false)
-                filteredItems = items
+                // Re-apply current search query (preferences or items may have changed)
+                if currentSearchQuery.isEmpty {
+                    filteredItems = items
+                } else {
+                    search(query: currentSearchQuery)
+                }
+                // Always reset selection to first item when window appears
+                selectedIndex = 0
                 // Load thumbnails for image items
                 await loadThumbnails(for: items)
             } catch {
@@ -129,6 +139,8 @@ class OverlayViewModel: ObservableObject {
     }
 
     func search(query: String) {
+        // Store the query to re-apply after reloading items
+        currentSearchQuery = query
         // Sync fuzzy search setting from preferences
         searchEngine.fuzzyMatchingEnabled = PreferencesManager.shared.fuzzySearchEnabled
         searchResults = searchEngine.search(query: query, in: items)

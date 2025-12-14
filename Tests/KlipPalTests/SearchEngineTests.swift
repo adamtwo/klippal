@@ -172,6 +172,23 @@ final class SearchEngineTests: XCTestCase {
             "Content match should rank higher than source app match")
     }
 
+    func testSourceAppMatchDoesNotProduceHighlightRanges() async throws {
+        // Item where search will only match sourceApp, not content
+        let item = ClipboardItem(
+            content: "x64 some other content",
+            contentType: .text,
+            contentHash: "sourceapp_only_\(UUID().uuidString)",
+            sourceApp: "Adam's App"
+        )
+
+        let results = searchEngine.search(query: "Adam", in: [item])
+
+        XCTAssertEqual(results.count, 1, "Should match via sourceApp")
+        XCTAssertEqual(results.first?.matchField, .sourceApp, "Match should be on sourceApp")
+        XCTAssertTrue(results.first?.matchedRanges.isEmpty ?? false,
+            "sourceApp match should NOT produce highlight ranges (they would be wrong for content)")
+    }
+
     // MARK: - Fuzzy Match Tests
 
     func testFuzzyMatchFindsPartialMatches() async throws {
@@ -437,11 +454,12 @@ final class SearchResultTests: XCTestCase {
             sourceApp: nil
         )
         let ranges = [NSRange(location: 0, length: 4)]
-        let result = SearchResult(item: item, score: 0.8, matchedRanges: ranges)
+        let result = SearchResult(item: item, score: 0.8, matchedRanges: ranges, matchField: .content)
 
         XCTAssertEqual(result.item.content, "Test")
         XCTAssertEqual(result.score, 0.8)
         XCTAssertEqual(result.matchedRanges.count, 1)
+        XCTAssertEqual(result.matchField, .content)
     }
 
     func testSearchResultsSortByScore() {
@@ -450,9 +468,9 @@ final class SearchResultTests: XCTestCase {
         let item3 = ClipboardItem(content: "C", contentType: .text, contentHash: "c", sourceApp: nil)
 
         var results = [
-            SearchResult(item: item1, score: 0.5, matchedRanges: []),
-            SearchResult(item: item2, score: 0.9, matchedRanges: []),
-            SearchResult(item: item3, score: 0.7, matchedRanges: []),
+            SearchResult(item: item1, score: 0.5, matchedRanges: [], matchField: .content),
+            SearchResult(item: item2, score: 0.9, matchedRanges: [], matchField: .content),
+            SearchResult(item: item3, score: 0.7, matchedRanges: [], matchField: .content),
         ]
 
         results.sort { $0.score > $1.score }
@@ -460,5 +478,22 @@ final class SearchResultTests: XCTestCase {
         XCTAssertEqual(results[0].item.content, "B") // 0.9
         XCTAssertEqual(results[1].item.content, "C") // 0.7
         XCTAssertEqual(results[2].item.content, "A") // 0.5
+    }
+
+    func testSearchResultMatchFieldTracking() {
+        let item = ClipboardItem(
+            content: "Test content",
+            contentType: .text,
+            contentHash: "test123",
+            sourceApp: "TestApp"
+        )
+
+        let contentResult = SearchResult(item: item, score: 0.8, matchedRanges: [NSRange(location: 0, length: 4)], matchField: .content)
+        XCTAssertEqual(contentResult.matchField, .content)
+        XCTAssertFalse(contentResult.matchedRanges.isEmpty)
+
+        let sourceAppResult = SearchResult(item: item, score: 0.6, matchedRanges: [], matchField: .sourceApp)
+        XCTAssertEqual(sourceAppResult.matchField, .sourceApp)
+        XCTAssertTrue(sourceAppResult.matchedRanges.isEmpty, "sourceApp matches should not have highlight ranges")
     }
 }

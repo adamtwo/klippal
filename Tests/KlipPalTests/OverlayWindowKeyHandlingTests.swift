@@ -162,12 +162,14 @@ final class OverlayWindowKeyHandlingTests: XCTestCase {
             defer: false
         )
         panel.viewModel = viewModel
-        viewModel.selectedIndex = 2
 
         let overlayView = OverlayView(viewModel: viewModel)
         panel.contentView = NSHostingView(rootView: overlayView)
         panel.makeKeyAndOrderFront(nil)
         try await Task.sleep(nanoseconds: 200_000_000)
+
+        // Set selectedIndex AFTER window appears (onAppear resets it to 0)
+        viewModel.selectedIndex = 2
 
         guard let upEvent = NSEvent.keyEvent(
             with: .keyDown,

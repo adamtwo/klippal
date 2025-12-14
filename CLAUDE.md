@@ -412,3 +412,4 @@ brew install --cask adamtwo/klippal/klippal
 - When you push something to remote, check if it triggers a pipeline run. If it does, monitor the pipeline execution, check for success. If it fails, analyze why and offer suggestions.
 - Never ask me if I'm ok to run this bash command, just run it when needed: pkill -f KlipPal 2>/dev/null; sleep 0.5; .build/debug/KlipPal &
 - the website is one directory app in dir called klippal-website
+- Never commit and push automatically
