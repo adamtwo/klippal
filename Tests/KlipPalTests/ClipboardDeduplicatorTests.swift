@@ -314,4 +314,82 @@ final class ClipboardDeduplicatorIntegrationTests: XCTestCase {
         let count = try await storage.count()
         XCTAssertEqual(count, 2, "Should have exactly 2 items")
     }
+
+    func testCheckContentReturnsNewForNewContent() async throws {
+        let content = "Brand new content"
+
+        let result = await deduplicator.checkContent(content: content)
+
+        if case .newContent(let hash) = result {
+            XCTAssertFalse(hash.isEmpty, "Hash should not be empty")
+        } else {
+            XCTFail("Should return newContent for new content")
+        }
+    }
+
+    func testCheckContentReturnsDuplicateForExistingContent() async throws {
+        let content = "Existing content"
+
+        // First, save the content
+        let firstResult = await deduplicator.checkContent(content: content)
+        guard case .newContent(let hash) = firstResult else {
+            XCTFail("First check should return newContent")
+            return
+        }
+
+        let item = ClipboardItem(
+            content: content,
+            contentType: .text,
+            contentHash: hash
+        )
+        try await storage.save(item)
+
+        // Now check again - should return duplicate
+        let secondResult = await deduplicator.checkContent(content: content)
+
+        if case .duplicate(let duplicateHash) = secondResult {
+            XCTAssertEqual(duplicateHash, hash, "Duplicate hash should match original")
+        } else {
+            XCTFail("Should return duplicate for existing content")
+        }
+    }
+
+    func testUpdateTimestampBringsItemToTop() async throws {
+        // Save two items with different timestamps
+        let oldContent = "Old content"
+        let newContent = "New content"
+
+        // Save old content first
+        let oldHash = SHA256Hasher.hash(string: oldContent)
+        let oldItem = ClipboardItem(
+            id: UUID(),
+            content: oldContent,
+            contentType: .text,
+            contentHash: oldHash,
+            timestamp: Date().addingTimeInterval(-3600) // 1 hour ago
+        )
+        try await storage.save(oldItem)
+
+        // Save new content
+        let newHash = SHA256Hasher.hash(string: newContent)
+        let newItem = ClipboardItem(
+            id: UUID(),
+            content: newContent,
+            contentType: .text,
+            contentHash: newHash,
+            timestamp: Date()
+        )
+        try await storage.save(newItem)
+
+        // Verify new content is first
+        var items = try await storage.fetchItems(limit: 10, favoriteOnly: false)
+        XCTAssertEqual(items.first?.content, newContent, "New content should be first initially")
+
+        // Update timestamp for old content (simulating re-copy)
+        try await storage.updateTimestamp(forHash: oldHash)
+
+        // Now old content should be first (since its timestamp was just updated)
+        items = try await storage.fetchItems(limit: 10, favoriteOnly: false)
+        XCTAssertEqual(items.first?.content, oldContent, "Old content should be first after timestamp update")
+    }
 }

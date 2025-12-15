@@ -413,3 +413,4 @@ brew install --cask adamtwo/klippal/klippal
 - Never ask me if I'm ok to run this bash command, just run it when needed: pkill -f KlipPal 2>/dev/null; sleep 0.5; .build/debug/KlipPal &
 - the website is one directory app in dir called klippal-website
 - Never commit and push automatically
+- When you code a change don't commit and push right away. I want to check before pushing.

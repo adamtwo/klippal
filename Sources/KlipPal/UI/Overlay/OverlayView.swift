@@ -113,9 +113,8 @@ struct OverlayView: View {
                                     thumbnailImage: viewModel.thumbnail(for: item),
                                     onDelete: { viewModel.deleteItem(item) },
                                     onSingleClick: {
-                                        // Single-click: just select and copy
+                                        // Single-click: just select (no copy)
                                         viewModel.selectedIndex = index
-                                        copyToClipboard(item)
                                     },
                                     onDoubleClick: {
                                         // Double-click: copy, close, and paste
@@ -195,6 +194,14 @@ struct OverlayView: View {
         .frame(minWidth: 400, minHeight: 300)
         .background(Color(NSColor.windowBackgroundColor))
         .cornerRadius(12)
+        .overlay(alignment: .top) {
+            if viewModel.showCopiedFeedback {
+                CopiedToastView()
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(100)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: viewModel.showCopiedFeedback)
         .onAppear {
             // Sync search query to ViewModel before loading
             // (ViewModel will re-apply search after loading items)
@@ -225,14 +232,6 @@ struct OverlayView: View {
         guard viewModel.selectedIndex < viewModel.filteredItems.count else { return }
         let item = viewModel.filteredItems[viewModel.selectedIndex]
         pasteItem(item)
-    }
-
-    private func copyToClipboard(_ item: ClipboardItem) {
-        // Just copy to clipboard, don't close window
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(item.content, forType: .string)
-        print("📋 Copied to clipboard (window stays open): \(item.content.prefix(50))")
     }
 
     private func pasteItem(_ item: ClipboardItem) {
@@ -314,5 +313,25 @@ struct FuzzySearchHintView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
+    }
+}
+
+// MARK: - Copied Toast View
+
+/// Brief toast notification shown when user copies with Cmd+C
+struct CopiedToastView: View {
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundColor(.green)
+            Text("Copied!")
+                .font(.system(size: 13, weight: .medium))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial)
+        .cornerRadius(8)
+        .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+        .padding(.top, 60)
     }
 }

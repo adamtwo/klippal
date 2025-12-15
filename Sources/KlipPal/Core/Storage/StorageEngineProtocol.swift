@@ -14,6 +14,9 @@ protocol StorageEngineProtocol: Actor {
     /// Check if an item with the given hash already exists
     func itemExists(withHash hash: String) async throws -> Bool
 
+    /// Update the timestamp of an item by its hash to the current time
+    func updateTimestamp(forHash hash: String) async throws
+
     /// Update an existing item (e.g., to toggle favorite)
     func update(_ item: ClipboardItem) async throws
 

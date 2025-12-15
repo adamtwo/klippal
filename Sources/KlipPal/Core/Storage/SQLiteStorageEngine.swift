@@ -149,6 +149,27 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
         return false
     }
 
+    func updateTimestamp(forHash hash: String) async throws {
+        let sql = "UPDATE items SET timestamp = ? WHERE content_hash = ?;"
+
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(message: String(cString: sqlite3_errmsg(db)))
+        }
+
+        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        let now = Int64(Date().timeIntervalSince1970)
+
+        sqlite3_bind_int64(statement, 1, now)
+        sqlite3_bind_text(statement, 2, (hash as NSString).utf8String, -1, SQLITE_TRANSIENT)
+
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw StorageError.executeFailed(message: String(cString: sqlite3_errmsg(db)))
+        }
+    }
+
     func update(_ item: ClipboardItem) async throws {
         // For now, just save (which does INSERT OR REPLACE)
         try await save(item)

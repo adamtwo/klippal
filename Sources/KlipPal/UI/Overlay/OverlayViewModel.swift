@@ -14,6 +14,8 @@ class OverlayViewModel: ObservableObject {
     @Published var scrollToSelection: UUID?
     @Published var thumbnailCache: [String: NSImage] = [:]
     @Published var fullImageCache: [String: NSImage] = [:]
+    /// Shows brief "Copied!" feedback when user copies with Cmd+C
+    @Published var showCopiedFeedback: Bool = false
 
     /// Current search query - stored to re-apply after reloading items
     private var currentSearchQuery: String = ""
@@ -187,6 +189,16 @@ class OverlayViewModel: ObservableObject {
     func pasteItem(_ item: ClipboardItem) {
         print("📋 Pasting item: \(item.content.prefix(50))...")
 
+        // Update timestamp to bring item to top of history
+        Task {
+            do {
+                try await storage.updateTimestamp(forHash: item.contentHash)
+                print("🔄 Updated timestamp for pasted item")
+            } catch {
+                print("⚠️ Failed to update timestamp: \(error)")
+            }
+        }
+
         // Close window and restore previous app before pasting
         onBeforePaste?()
 
@@ -228,6 +240,34 @@ class OverlayViewModel: ObservableObject {
         guard selectedIndex < filteredItems.count else { return }
         let item = filteredItems[selectedIndex]
         pasteItem(item)
+    }
+
+    /// Copy the selected item to the system clipboard (Cmd+C)
+    func copySelectedToClipboard() {
+        guard selectedIndex < filteredItems.count else { return }
+        let item = filteredItems[selectedIndex]
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(item.content, forType: .string)
+        print("📋 Copied to clipboard: \(item.content.prefix(50))...")
+
+        // Update timestamp to bring item to top of history
+        Task {
+            do {
+                try await storage.updateTimestamp(forHash: item.contentHash)
+                print("🔄 Updated timestamp for copied item")
+            } catch {
+                print("⚠️ Failed to update timestamp: \(error)")
+            }
+        }
+
+        // Show brief visual feedback
+        showCopiedFeedback = true
+        Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 seconds
+            showCopiedFeedback = false
+        }
     }
 
     /// Close the overlay window

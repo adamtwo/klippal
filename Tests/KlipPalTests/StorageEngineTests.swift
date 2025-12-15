@@ -156,4 +156,114 @@ final class StorageEngineTests: XCTestCase {
         XCTAssertEqual(items.count, 1)
         XCTAssertEqual(items.first?.content, "Favorite")
     }
+
+    // MARK: - Update Timestamp Tests
+
+    func testUpdateTimestamp() async throws {
+        // Create item with old timestamp
+        let oldDate = Date().addingTimeInterval(-3600) // 1 hour ago
+        let hash = "timestamp123"
+        let item = ClipboardItem(
+            content: "Test content",
+            contentType: .text,
+            contentHash: hash,
+            timestamp: oldDate
+        )
+
+        // Save item
+        try await storage.save(item)
+
+        // Verify initial timestamp
+        var items = try await storage.fetchItems(limit: nil, favoriteOnly: false)
+        XCTAssertEqual(items.count, 1)
+        let initialTimestamp = items.first!.timestamp
+
+        // Wait a tiny bit to ensure timestamp difference
+        try await Task.sleep(nanoseconds: 10_000_000) // 10ms
+
+        // Update timestamp
+        try await storage.updateTimestamp(forHash: hash)
+
+        // Fetch again and verify timestamp was updated
+        items = try await storage.fetchItems(limit: nil, favoriteOnly: false)
+        XCTAssertEqual(items.count, 1)
+        let updatedTimestamp = items.first!.timestamp
+
+        XCTAssertGreaterThan(updatedTimestamp, initialTimestamp, "Timestamp should be updated to a newer time")
+    }
+
+    func testUpdateTimestampBringsItemToTop() async throws {
+        // Create two items - older one first
+        let oldDate = Date().addingTimeInterval(-3600) // 1 hour ago
+        let oldItem = ClipboardItem(
+            content: "Old item",
+            contentType: .text,
+            contentHash: "old_hash",
+            timestamp: oldDate
+        )
+
+        let newItem = ClipboardItem(
+            content: "New item",
+            contentType: .text,
+            contentHash: "new_hash",
+            timestamp: Date()
+        )
+
+        // Save both items
+        try await storage.save(oldItem)
+        try await storage.save(newItem)
+
+        // Verify new item is first (most recent)
+        var items = try await storage.fetchItems(limit: nil, favoriteOnly: false)
+        XCTAssertEqual(items.count, 2)
+        XCTAssertEqual(items.first?.content, "New item")
+
+        // Update timestamp of old item
+        try await storage.updateTimestamp(forHash: "old_hash")
+
+        // Now old item should be first (its timestamp is now the most recent)
+        items = try await storage.fetchItems(limit: nil, favoriteOnly: false)
+        XCTAssertEqual(items.count, 2)
+        XCTAssertEqual(items.first?.content, "Old item", "Old item should now be first after timestamp update")
+    }
+
+    func testUpdateTimestampForNonExistentHash() async throws {
+        // This should not throw - just silently do nothing
+        try await storage.updateTimestamp(forHash: "nonexistent_hash")
+
+        // Verify no items were affected
+        let count = try await storage.count()
+        XCTAssertEqual(count, 0)
+    }
+
+    func testUpdateTimestampPreservesOtherFields() async throws {
+        // Create item with all fields populated
+        let hash = "preserve_fields_hash"
+        var item = ClipboardItem(
+            content: "Test content",
+            contentType: .url,
+            contentHash: hash,
+            sourceApp: "Safari",
+            blobPath: "/some/path"
+        )
+        item.isFavorite = true
+
+        // Save item
+        try await storage.save(item)
+
+        // Update timestamp
+        try await storage.updateTimestamp(forHash: hash)
+
+        // Fetch and verify all other fields are preserved
+        let items = try await storage.fetchItems(limit: nil, favoriteOnly: false)
+        XCTAssertEqual(items.count, 1)
+        let updatedItem = items.first!
+
+        XCTAssertEqual(updatedItem.content, "Test content")
+        XCTAssertEqual(updatedItem.contentType, .url)
+        XCTAssertEqual(updatedItem.contentHash, hash)
+        XCTAssertEqual(updatedItem.sourceApp, "Safari")
+        XCTAssertEqual(updatedItem.blobPath, "/some/path")
+        XCTAssertTrue(updatedItem.isFavorite)
+    }
 }

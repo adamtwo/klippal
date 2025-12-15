@@ -66,14 +66,18 @@ class OverlayPanel: NSPanel {
         let keyCode = event.keyCode
         let modifiers = event.modifierFlags
 
-        // For edit commands with Cmd modifier, send standard actions through the responder chain
+        // For edit commands with Cmd modifier
         if modifiers.contains(.command) && Self.editCommandKeys.contains(keyCode) {
+            // Special handling for Cmd+C: always copy the selected clipboard item
+            if keyCode == KeyCode.c.rawValue {
+                handleCopySelected()
+                return true
+            }
+
             let action: Selector?
             switch keyCode {
             case KeyCode.a.rawValue: // Cmd+A: Select All
                 action = #selector(NSText.selectAll(_:))
-            case KeyCode.c.rawValue: // Cmd+C: Copy
-                action = #selector(NSText.copy(_:))
             case KeyCode.v.rawValue: // Cmd+V: Paste
                 action = #selector(NSText.paste(_:))
             case KeyCode.x.rawValue: // Cmd+X: Cut
@@ -171,5 +175,12 @@ class OverlayPanel: NSPanel {
 
     private func handleEscape() {
         onClose?()
+    }
+
+    private func handleCopySelected() {
+        guard let viewModel = viewModel else { return }
+        Task { @MainActor in
+            viewModel.copySelectedToClipboard()
+        }
     }
 }
