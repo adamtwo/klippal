@@ -100,6 +100,11 @@ struct OverlayView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 0) {
+                            // Invisible anchor at top for scroll-to-top
+                            Color.clear
+                                .frame(height: 0)
+                                .id("scroll-top-anchor")
+
                             ForEach(Array(viewModel.filteredItems.enumerated()), id: \.element.id) { index, item in
                                 // Show separator before the first fuzzy result
                                 if index == viewModel.fuzzyResultsStartIndex {
@@ -142,6 +147,10 @@ struct OverlayView: View {
                                 proxy.scrollTo(itemId, anchor: .center)
                             }
                         }
+                    }
+                    .onChange(of: viewModel.scrollToTopTrigger) { _ in
+                        // Scroll to top when window opens
+                        proxy.scrollTo("scroll-top-anchor", anchor: .top)
                     }
                 }
             }

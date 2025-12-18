@@ -298,4 +298,80 @@ final class OverlayViewModelNavigationTests: XCTestCase {
         XCTAssertEqual(scroll3, viewModel.filteredItems[1].id)
         XCTAssertNotEqual(scroll2, scroll3, "Scroll target should update on direction change")
     }
+
+    // MARK: - Scroll to Top on Load
+
+    func testLoadItemsResetsSelectedIndexToZero() async throws {
+        // Create test items
+        let items = (0..<5).map { i in
+            ClipboardItem(
+                content: "Item \(i)",
+                contentType: .text,
+                contentHash: "hash\(i)"
+            )
+        }
+
+        for item in items {
+            try await storage.save(item)
+        }
+
+        viewModel.loadItems()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        // Simulate user scrolling down and selecting item 3
+        viewModel.selectedIndex = 3
+
+        // Reload items (simulates window re-opening)
+        viewModel.loadItems()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(viewModel.selectedIndex, 0, "Selected index should reset to 0 on loadItems")
+    }
+
+    func testLoadItemsTriggersScrollToTop() async throws {
+        // Create test items
+        let items = (0..<5).map { i in
+            ClipboardItem(
+                content: "Item \(i)",
+                contentType: .text,
+                contentHash: "hash\(i)"
+            )
+        }
+
+        for item in items {
+            try await storage.save(item)
+        }
+
+        let initialTrigger = viewModel.scrollToTopTrigger
+
+        viewModel.loadItems()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertGreaterThan(viewModel.scrollToTopTrigger, initialTrigger,
+            "scrollToTopTrigger should increment on loadItems")
+    }
+
+    func testScrollToTopTriggerIncrementsOnEachLoad() async throws {
+        // Create test item
+        let item = ClipboardItem(
+            content: "Test",
+            contentType: .text,
+            contentHash: "hash1"
+        )
+        try await storage.save(item)
+
+        let trigger1 = viewModel.scrollToTopTrigger
+
+        viewModel.loadItems()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        let trigger2 = viewModel.scrollToTopTrigger
+        XCTAssertGreaterThan(trigger2, trigger1, "Trigger should increment after first load")
+
+        viewModel.loadItems()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        let trigger3 = viewModel.scrollToTopTrigger
+        XCTAssertGreaterThan(trigger3, trigger2, "Trigger should increment after second load")
+    }
 }

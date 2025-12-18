@@ -16,6 +16,8 @@ class OverlayViewModel: ObservableObject {
     @Published var fullImageCache: [String: NSImage] = [:]
     /// Shows brief "Copied!" feedback when user copies with Cmd+C
     @Published var showCopiedFeedback: Bool = false
+    /// Incremented to trigger scroll to top when window opens
+    @Published var scrollToTopTrigger: Int = 0
 
     /// Current search query - stored to re-apply after reloading items
     private var currentSearchQuery: String = ""
@@ -70,6 +72,8 @@ class OverlayViewModel: ObservableObject {
                 }
                 // Always reset selection to first item when window appears
                 selectedIndex = 0
+                // Trigger scroll to top
+                scrollToTopTrigger += 1
                 // Load thumbnails for image items
                 await loadThumbnails(for: items)
             } catch {
