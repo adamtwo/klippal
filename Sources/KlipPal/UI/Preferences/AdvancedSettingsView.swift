@@ -8,57 +8,57 @@ struct AdvancedSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Search settings section
-            VStack(alignment: .leading, spacing: 4) {
-                Toggle(isOn: $preferences.fuzzySearchEnabled) {
-                    Text("Enable fuzzy search")
+            // Search settings section - compact
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Fuzzy search")
                         .fontWeight(.medium)
+                    Text("Match characters in order even if not consecutive")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-                .toggleStyle(.switch)
-
-                Text("When enabled, search matches characters in order even if not consecutive (e.g., \"hwd\" matches \"hello world\"). When disabled, only exact and substring matches are used.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Toggle("", isOn: $preferences.fuzzySearchEnabled)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
             }
             .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 12)
+            .padding(.vertical, 10)
 
             Divider()
 
-            // Excluded apps section
-            VStack(alignment: .leading, spacing: 4) {
-                Toggle(isOn: $excludedAppsManager.isEnabled) {
-                    Text("Exclude apps from clipboard history")
+            // Excluded apps toggle - compact
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Exclude apps from history")
                         .fontWeight(.medium)
+                    Text("Content from excluded apps won't be saved")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-                .toggleStyle(.switch)
-
-                Text("Content copied from excluded apps will not be saved to your clipboard history. Useful for password managers and other sensitive apps.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Toggle("", isOn: $excludedAppsManager.isEnabled)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
             }
             .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 12)
+            .padding(.vertical, 10)
 
             Divider()
 
-            // Apps list
+            // Apps list - takes remaining space
             if excludedAppsManager.isEnabled {
                 ExcludedAppsListView(
                     excludedAppsManager: excludedAppsManager,
                     selectedAppId: $selectedAppId
                 )
+                .frame(maxHeight: .infinity)
 
                 // Toolbar
                 ExcludedAppsToolbar(
                     excludedAppsManager: excludedAppsManager,
                     selectedAppId: $selectedAppId,
                     onAddApp: {
-                        // Use a separate NSWindow for proper keyboard handling in menu bar apps
                         AddExcludedAppWindowController.show(
                             excludedAppsManager: excludedAppsManager,
                             onDismiss: {}
@@ -66,17 +66,18 @@ struct AdvancedSettingsView: View {
                     }
                 )
             } else {
-                Spacer()
-                HStack {
+                VStack {
                     Spacer()
                     Text("Enable the toggle above to manage excluded apps")
                         .foregroundColor(.secondary)
                         .font(.caption)
                     Spacer()
                 }
-                Spacer()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationTitle("Advanced")
     }
 }
 
@@ -206,5 +207,5 @@ struct ExcludedAppsToolbar: View {
 
 #Preview {
     AdvancedSettingsView(excludedAppsManager: ExcludedAppsManager.shared)
-        .frame(width: 450, height: 300)
+        .frame(width: 450, height: 350)
 }

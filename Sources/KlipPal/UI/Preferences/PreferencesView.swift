@@ -1,35 +1,64 @@
 import SwiftUI
 
-/// Main preferences view with tabs for different settings sections
+/// Settings category for sidebar navigation
+enum SettingsCategory: String, CaseIterable, Identifiable {
+    case general = "General"
+    case storage = "Storage"
+    case advanced = "Advanced"
+    case about = "About"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .general: return "gear"
+        case .storage: return "internaldrive"
+        case .advanced: return "gearshape.2"
+        case .about: return "info.circle"
+        }
+    }
+}
+
+/// Main preferences view with sidebar navigation like System Settings
 struct PreferencesView: View {
     @ObservedObject private var preferences = PreferencesManager.shared
     @ObservedObject private var excludedAppsManager = ExcludedAppsManager.shared
     @State private var showingClearConfirmation = false
     @State private var itemCount: Int = 0
+    @State private var selectedCategory: SettingsCategory = .general
 
     var body: some View {
-        TabView {
-            GeneralSettingsView(preferences: preferences)
-                .tabItem {
-                    Label("General", systemImage: "gear")
-                }
+        HStack(spacing: 0) {
+            // Sidebar - always visible
+            List(SettingsCategory.allCases, selection: $selectedCategory) { category in
+                Label(category.rawValue, systemImage: category.icon)
+                    .tag(category)
+            }
+            .listStyle(.sidebar)
+            .frame(width: 180)
 
-            StorageSettingsView(preferences: preferences, showingClearConfirmation: $showingClearConfirmation, itemCount: $itemCount)
-                .tabItem {
-                    Label("Storage", systemImage: "internaldrive")
-                }
+            Divider()
 
-            AdvancedSettingsView(excludedAppsManager: excludedAppsManager)
-                .tabItem {
-                    Label("Advanced", systemImage: "gearshape.2")
+            // Detail view
+            Group {
+                switch selectedCategory {
+                case .general:
+                    GeneralSettingsView(preferences: preferences)
+                case .storage:
+                    StorageSettingsView(
+                        preferences: preferences,
+                        showingClearConfirmation: $showingClearConfirmation,
+                        itemCount: $itemCount
+                    )
+                case .advanced:
+                    AdvancedSettingsView(excludedAppsManager: excludedAppsManager)
+                case .about:
+                    AboutView()
                 }
-
-            AboutView()
-                .tabItem {
-                    Label("About", systemImage: "info.circle")
-                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(minWidth: 400, idealWidth: 450, minHeight: 280, idealHeight: 320)
+        .frame(minWidth: 550, idealWidth: 600, minHeight: 350, idealHeight: 400)
         .alert("Clear Clipboard History", isPresented: $showingClearConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Clear All", role: .destructive) {
@@ -51,7 +80,6 @@ struct PreferencesView: View {
             if let storage = AppDelegate.shared?.storage {
                 try? await storage.deleteAll()
                 print("✅ Clipboard history cleared")
-                // Update the item count after clearing
                 await MainActor.run {
                     itemCount = 0
                 }
@@ -89,6 +117,7 @@ struct GeneralSettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
+        .navigationTitle("General")
     }
 }
 
@@ -147,6 +176,7 @@ struct StorageSettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
+        .navigationTitle("Storage")
     }
 }
 
@@ -157,6 +187,8 @@ struct AboutView: View {
 
     var body: some View {
         VStack(spacing: 16) {
+            Spacer()
+
             // App logo - matching menu bar branding
             Text("Kᵖ")
                 .font(.system(size: 64, weight: .bold, design: .rounded))
@@ -196,6 +228,7 @@ struct AboutView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+        .navigationTitle("About")
     }
 }
 
