@@ -11,7 +11,7 @@ struct ClipboardItemRowView: View {
     var onDoubleClick: (() -> Void)?
     var onLoadFullImage: (() async -> NSImage?)?
 
-    @State private var isHoveringRow = false
+    @State private var isHoveringPreviewIcon = false
     @State private var fullImage: NSImage?
     @State private var isLoadingFullImage = false
     @State private var urlPreview: URLPreviewData?
@@ -32,105 +32,153 @@ struct ClipboardItemRowView: View {
         HStack(alignment: .top, spacing: 12) {
             // Clickable content area (excludes delete button)
             HStack(alignment: .top, spacing: 12) {
-                // Icon or Thumbnail - all same size (60x60)
-                if item.contentType == .image, let thumbnail = thumbnailImage {
-                    Image(nsImage: thumbnail)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 60, height: 60)
-                        .cornerRadius(4)
-                        .overlay(
+                // Icon or Thumbnail - all same size (60x60) with preview button overlay
+                ZStack(alignment: .topTrailing) {
+                    if item.contentType == .image, let thumbnail = thumbnailImage {
+                        Image(nsImage: thumbnail)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 60, height: 60)
+                            .cornerRadius(4)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                            )
+                    } else {
+                        // Large icon for all content types
+                        ZStack {
                             RoundedRectangle(cornerRadius: 4)
-                                .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                        )
-                } else {
-                    // Large icon for all content types
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(iconBackgroundColor)
-                        Image(systemName: iconForContentType)
-                            .font(.system(size: 24))
-                            .foregroundColor(iconColor)
+                                .fill(iconBackgroundColor)
+                            Image(systemName: iconForContentType)
+                                .font(.system(size: 24))
+                                .foregroundColor(iconColor)
+                        }
+                        .frame(width: 60, height: 60)
                     }
-                    .frame(width: 60, height: 60)
-                }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    // Content preview with highlighting
+                    // Preview magnifying glass icon - visual indicator for items with preview content
+                    if shouldShowPreviewPopover {
+                        Image(systemName: "magnifyingglass.circle.fill")
+                            .font(.system(size: 18))
+                            .foregroundColor(.secondary.opacity(0.6))
+                            .offset(x: -2, y: 2)
+                    }
+                }
+                .contentShape(Rectangle())
+                .onHover { hovering in
+                    guard shouldShowPreviewPopover else { return }
+                    isHoveringPreviewIcon = hovering
+                    // Pre-load content when hovering starts
+                    if hovering {
+                        if item.contentType == .image && fullImage == nil && !isLoadingFullImage {
+                            loadFullImageAsync()
+                        } else if item.contentType == .url && urlPreview == nil && !isLoadingURLPreview {
+                            loadURLPreviewAsync()
+                        }
+                    }
+                }
+                .onTapGesture {
+                    // Close popover on click
+                    isHoveringPreviewIcon = false
+                }
+                .popover(isPresented: $isHoveringPreviewIcon, arrowEdge: .trailing) {
                     if item.contentType == .image {
-                        // For images, show dimensions/metadata instead of preview
-                        Text(item.content)
+                        ImagePreviewPopover(
+                            image: fullImage,
+                            isLoading: isLoadingFullImage,
+                            dimensions: item.content
+                        )
+                    } else if item.contentType == .url {
+                        URLPreviewPopover(
+                            url: item.content,
+                            preview: urlPreview,
+                            isLoading: isLoadingURLPreview
+                        )
+                    } else {
+                        TextPreviewPopover(
+                            content: item.content,
+                            characterCount: item.formattedCharacterCount
+                        )
+                    }
+                }
+                .help(shouldShowPreviewPopover ? "Preview content" : "")
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        // Content preview with highlighting
+                        if item.contentType == .image {
+                            // For images, show dimensions/metadata instead of preview
+                            Text(item.content)
+                                .font(.system(size: 13))
+                                .foregroundColor(.primary)
+                                .lineLimit(2)
+                        } else if item.contentType == .url {
+                            // For URLs, show the full URL with highlighting
+                            HighlightedText(
+                                item.content,
+                                highlightRanges: adjustedRanges,
+                                highlightColor: .accentColor,
+                                lineLimit: 3
+                            )
+                            .font(.system(size: 13))
+                            .foregroundColor(.purple)
+                        } else {
+                            // Text content
+                            HighlightedText(
+                                item.preview,
+                                highlightRanges: adjustedRanges,
+                                highlightColor: .accentColor,
+                                lineLimit: 3
+                            )
                             .font(.system(size: 13))
                             .foregroundColor(.primary)
-                            .lineLimit(2)
-                    } else if item.contentType == .url {
-                        // For URLs, show the full URL with highlighting
-                        HighlightedText(
-                            item.content,
-                            highlightRanges: adjustedRanges,
-                            highlightColor: .accentColor,
-                            lineLimit: 3
-                        )
-                        .font(.system(size: 13))
-                        .foregroundColor(.purple)
-                    } else {
-                        // Text content
-                        HighlightedText(
-                            item.preview,
-                            highlightRanges: adjustedRanges,
-                            highlightColor: .accentColor,
-                            lineLimit: 3
-                        )
-                        .font(.system(size: 13))
-                        .foregroundColor(.primary)
-                    }
-
-                    // Metadata
-                    HStack(spacing: 8) {
-                        Text(item.timestamp.formatted(.relative(presentation: .named)))
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        if let appName = item.sourceApp {
-                            Text("•")
-                                .foregroundColor(.secondary)
-                                .font(.caption)
-
-                            Text(appName)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
                         }
 
-                        // Show character count if content is truncated
-                        if item.isTruncated {
-                            Text("•")
+                        // Metadata
+                        HStack(spacing: 8) {
+                            Text(item.timestamp.formatted(.relative(presentation: .named)))
+                                .font(.caption)
                                 .foregroundColor(.secondary)
-                                .font(.caption)
 
-                            Text(item.formattedCharacterCount)
-                                .font(.caption)
-                                .foregroundColor(.orange)
-                        }
+                            if let appName = item.sourceApp {
+                                Text("•")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
 
-                        Spacer()
+                                Text(appName)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
 
-                        if item.isFavorite {
-                            Image(systemName: "star.fill")
-                                .font(.caption)
-                                .foregroundColor(.yellow)
+                            // Show character count if content is truncated
+                            if item.isTruncated {
+                                Text("•")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
+
+                                Text(item.formattedCharacterCount)
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                            }
+
+                            Spacer()
+
+                            if item.isFavorite {
+                                Image(systemName: "star.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.yellow)
+                            }
                         }
                     }
                 }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture(count: 2) {
-                onDoubleClick?()
-            }
-            .simultaneousGesture(
-                TapGesture(count: 1).onEnded {
-                    onSingleClick?()
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) {
+                    onDoubleClick?()
                 }
-            )
+                .simultaneousGesture(
+                    TapGesture(count: 1).onEnded {
+                        onSingleClick?()
+                    }
+                )
 
             // Delete button - always visible on right side (outside clickable area)
             if let onDelete = onDelete {
@@ -154,40 +202,6 @@ struct ClipboardItemRowView: View {
         )
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .onHover { hovering in
-            // Only show popover for items that have preview content
-            if shouldShowPreviewPopover {
-                isHoveringRow = hovering
-                // Pre-load content when hovering starts
-                if hovering {
-                    if item.contentType == .image && fullImage == nil && !isLoadingFullImage {
-                        loadFullImageAsync()
-                    } else if item.contentType == .url && urlPreview == nil && !isLoadingURLPreview {
-                        loadURLPreviewAsync()
-                    }
-                }
-            }
-        }
-        .popover(isPresented: $isHoveringRow, arrowEdge: .trailing) {
-            if item.contentType == .image {
-                ImagePreviewPopover(
-                    image: fullImage,
-                    isLoading: isLoadingFullImage,
-                    dimensions: item.content
-                )
-            } else if item.contentType == .url {
-                URLPreviewPopover(
-                    url: item.content,
-                    preview: urlPreview,
-                    isLoading: isLoadingURLPreview
-                )
-            } else {
-                TextPreviewPopover(
-                    content: item.content,
-                    characterCount: item.formattedCharacterCount
-                )
-            }
-        }
     }
 
     /// Whether this item should show a preview popover on hover
