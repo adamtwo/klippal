@@ -1,4 +1,4 @@
-name: CD Build
+name: CD
 
 on:
   workflow_dispatch:
