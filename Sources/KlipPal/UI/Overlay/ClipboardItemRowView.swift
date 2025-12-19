@@ -541,12 +541,12 @@ struct TextPreviewPopover: View {
     let content: String
     let characterCount: String
 
-    /// Maximum width for the preview
-    private let maxWidth: CGFloat = 400
-    /// Maximum height for the preview
+    /// Width for the preview text area
+    private let textWidth: CGFloat = 380
+    /// Maximum height for the scroll area
     private let maxHeight: CGFloat = 300
     /// Maximum characters to show in preview
-    private let maxPreviewChars = 2000
+    private let maxPreviewChars = 1000
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -555,9 +555,11 @@ struct TextPreviewPopover: View {
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundColor(.primary)
                     .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .lineLimit(nil)
+                    .frame(width: textWidth, alignment: .leading)
             }
-            .frame(maxWidth: maxWidth, maxHeight: maxHeight)
+            .frame(width: textWidth)
+            .frame(maxHeight: maxHeight)
 
             HStack {
                 Text(characterCount)
@@ -572,6 +574,7 @@ struct TextPreviewPopover: View {
 
                 Spacer()
             }
+            .frame(width: textWidth)
         }
         .padding(12)
     }

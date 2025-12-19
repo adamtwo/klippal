@@ -7,7 +7,7 @@ class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
     convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 450, height: 300),
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false

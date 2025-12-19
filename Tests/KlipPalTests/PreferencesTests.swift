@@ -156,9 +156,10 @@ final class PreferencesTests: XCTestCase {
         let controller = PreferencesWindowController()
 
         let frame = controller.window?.frame
-        XCTAssertEqual(frame?.width, 450, "Window width should be 450")
+        // Window uses sidebar layout with minWidth 550
+        XCTAssertGreaterThanOrEqual(frame?.width ?? 0, 550, "Window width should be at least 550")
         // Height includes title bar, so check minimum content height
-        XCTAssertGreaterThanOrEqual(frame?.height ?? 0, 300, "Window height should be at least 300")
+        XCTAssertGreaterThanOrEqual(frame?.height ?? 0, 350, "Window height should be at least 350")
     }
 
     @MainActor
