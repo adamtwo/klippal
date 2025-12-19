@@ -32,7 +32,6 @@ Type to filter through your history. KlipPal searches the content of everything 
 - Customize the keyboard shortcut
 - Set how many items to keep (100-2000)
 - Auto-delete old items after a set time
-- Mark important items as favorites so they're never deleted
 
 ## Installation
 
