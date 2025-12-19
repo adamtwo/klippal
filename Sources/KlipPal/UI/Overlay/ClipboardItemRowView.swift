@@ -17,6 +17,10 @@ struct ClipboardItemRowView: View {
     @State private var urlPreview: URLPreviewData?
     @State private var isLoadingURLPreview = false
 
+    /// The edge where the popover arrow points (popover appears on opposite side)
+    /// Using .leading positions the popover to the left of the main window
+    static let popoverArrowEdge: Edge = .leading
+
     init(item: ClipboardItem, isSelected: Bool, highlightRanges: [NSRange] = [], thumbnailImage: NSImage? = nil, onDelete: (() -> Void)? = nil, onSingleClick: (() -> Void)? = nil, onDoubleClick: (() -> Void)? = nil, onLoadFullImage: (() async -> NSImage?)? = nil) {
         self.item = item
         self.isSelected = isSelected
@@ -81,7 +85,7 @@ struct ClipboardItemRowView: View {
                     // Close popover on click
                     isHoveringPreviewIcon = false
                 }
-                .popover(isPresented: $isHoveringPreviewIcon, arrowEdge: .trailing) {
+                .popover(isPresented: $isHoveringPreviewIcon, arrowEdge: Self.popoverArrowEdge) {
                     if item.contentType == .image {
                         ImagePreviewPopover(
                             image: fullImage,

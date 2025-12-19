@@ -1,8 +1,19 @@
 import XCTest
+import SwiftUI
 @testable import KlipPal
 
 /// Tests for ClipboardItemRowView and preview popover functionality
 final class ClipboardItemRowViewTests: XCTestCase {
+
+    // MARK: - Popover Positioning Tests
+
+    func testPopoverAppearsOnLeftSideOfMainWindow() {
+        // The popover arrow edge should be .leading, which positions
+        // the popover content to the left of the trigger element
+        // (and thus to the left of the main window)
+        XCTAssertEqual(ClipboardItemRowView.popoverArrowEdge, .leading,
+            "Popover should appear on the left side of the main window")
+    }
 
     // MARK: - shouldShowPreviewPopover Logic Tests
 
