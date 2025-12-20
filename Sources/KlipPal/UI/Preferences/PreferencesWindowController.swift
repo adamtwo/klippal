@@ -5,7 +5,7 @@ import SwiftUI
 class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     static var shared: PreferencesWindowController?
 
-    convenience init() {
+    convenience init(initialCategory: SettingsCategory = .general) {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -16,7 +16,7 @@ class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         window.title = "KlipPal Preferences"
         window.center()
         window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: PreferencesView())
+        window.contentView = NSHostingView(rootView: PreferencesView(initialCategory: initialCategory))
 
         self.init(window: window)
 
@@ -24,11 +24,14 @@ class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
     }
 
-    static func show() {
+    static func show(category: SettingsCategory = .general) {
         print("📋 PreferencesWindowController.show() called")
         if shared == nil {
             print("📋 Creating new PreferencesWindowController")
-            shared = PreferencesWindowController()
+            shared = PreferencesWindowController(initialCategory: category)
+        } else if let window = shared?.window {
+            // Update the content view to show the requested category
+            window.contentView = NSHostingView(rootView: PreferencesView(initialCategory: category))
         }
 
         guard let window = shared?.window else {

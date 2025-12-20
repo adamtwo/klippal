@@ -52,6 +52,12 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
+        // About item
+        let aboutItem = NSMenuItem(title: "About KlipPal", action: #selector(openAbout), keyEquivalent: "")
+        aboutItem.target = self
+        aboutItem.isEnabled = true
+        menu.addItem(aboutItem)
+
         // Quit item - use NSApp.terminate which always works
         let quitItem = NSMenuItem(title: "Quit KlipPal", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quitItem.target = nil  // nil target sends to first responder / NSApp
@@ -93,6 +99,13 @@ class StatusBarController: NSObject, NSMenuDelegate {
         preferencesOpenedCount += 1
         DispatchQueue.main.async {
             PreferencesWindowController.show()
+        }
+    }
+
+    @objc func openAbout() {
+        print("📋 openAbout called")
+        DispatchQueue.main.async {
+            PreferencesWindowController.show(category: .about)
         }
     }
 

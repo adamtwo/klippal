@@ -25,7 +25,11 @@ struct PreferencesView: View {
     @ObservedObject private var excludedAppsManager = ExcludedAppsManager.shared
     @State private var showingClearConfirmation = false
     @State private var itemCount: Int = 0
-    @State private var selectedCategory: SettingsCategory = .general
+    @State private var selectedCategory: SettingsCategory
+
+    init(initialCategory: SettingsCategory = .general) {
+        _selectedCategory = State(initialValue: initialCategory)
+    }
 
     var body: some View {
         HStack(spacing: 0) {

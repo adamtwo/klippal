@@ -42,21 +42,28 @@ final class MenuActionTests: XCTestCase {
 
         menu.addItem(NSMenuItem.separator())
 
-        let quitItem = NSMenuItem(title: "Quit CopyManager", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let aboutItem = NSMenuItem(title: "About KlipPal", action: nil, keyEquivalent: "")
+        aboutItem.target = controller
+        aboutItem.action = #selector(MockMenuTarget.openAbout)
+        aboutItem.isEnabled = true
+        menu.addItem(aboutItem)
+
+        let quitItem = NSMenuItem(title: "Quit KlipPal", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quitItem.target = nil
         quitItem.isEnabled = true
         menu.addItem(quitItem)
 
         // Verify menu structure
-        XCTAssertEqual(menu.items.count, 5, "Menu should have 5 items (3 actions + 2 separators)")
+        XCTAssertEqual(menu.items.count, 6, "Menu should have 6 items (4 actions + 2 separators)")
 
         // Verify non-separator items
         let actionItems = menu.items.filter { !$0.isSeparatorItem }
-        XCTAssertEqual(actionItems.count, 3, "Should have 3 action items")
+        XCTAssertEqual(actionItems.count, 4, "Should have 4 action items")
 
         XCTAssertEqual(actionItems[0].title, "Open Clipboard History")
         XCTAssertEqual(actionItems[1].title, "Preferences...")
-        XCTAssertEqual(actionItems[2].title, "Quit CopyManager")
+        XCTAssertEqual(actionItems[2].title, "About KlipPal")
+        XCTAssertEqual(actionItems[3].title, "Quit KlipPal")
     }
 
     // MARK: - Action Invocation Tests
@@ -118,6 +125,29 @@ final class MenuActionTests: XCTestCase {
         // Test that target responds to the selectors
         XCTAssertTrue(controller.responds(to: #selector(MockMenuTarget.openPreferences)), "Should respond to openPreferences")
         XCTAssertTrue(controller.responds(to: #selector(MockMenuTarget.openClipboardHistory)), "Should respond to openClipboardHistory")
+        XCTAssertTrue(controller.responds(to: #selector(MockMenuTarget.openAbout)), "Should respond to openAbout")
+    }
+
+    @MainActor
+    func testAboutActionCanBeInvoked() async throws {
+        let controller = MockMenuTarget()
+
+        // Verify initial state
+        XCTAssertEqual(controller.aboutOpenedCount, 0, "Should start with 0 about opens")
+
+        // Create menu item with target/action
+        let aboutItem = NSMenuItem(title: "About KlipPal", action: #selector(MockMenuTarget.openAbout), keyEquivalent: "")
+        aboutItem.target = controller
+        aboutItem.isEnabled = true
+
+        // Programmatically invoke the action
+        if let target = aboutItem.target as? MockMenuTarget,
+           let action = aboutItem.action {
+            _ = target.perform(action, with: aboutItem)
+        }
+
+        // Verify action was invoked
+        XCTAssertEqual(controller.aboutOpenedCount, 1, "About should have been opened once")
     }
 
     @MainActor
@@ -212,6 +242,7 @@ final class MenuActionTests: XCTestCase {
 class MockMenuTarget: NSObject {
     private(set) var preferencesOpenedCount: Int = 0
     private(set) var clipboardHistoryOpenedCount: Int = 0
+    private(set) var aboutOpenedCount: Int = 0
 
     @objc func openPreferences() {
         print("📋 MockMenuTarget.openPreferences called")
@@ -224,5 +255,13 @@ class MockMenuTarget: NSObject {
     @objc func openClipboardHistory() {
         print("📋 MockMenuTarget.openClipboardHistory called")
         clipboardHistoryOpenedCount += 1
+    }
+
+    @objc func openAbout() {
+        print("📋 MockMenuTarget.openAbout called")
+        aboutOpenedCount += 1
+        DispatchQueue.main.async {
+            PreferencesWindowController.show(category: .about)
+        }
     }
 }

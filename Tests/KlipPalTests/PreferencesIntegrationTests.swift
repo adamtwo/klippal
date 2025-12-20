@@ -44,7 +44,8 @@ final class PreferencesIntegrationTests: XCTestCase {
 
     @MainActor
     func testPreferencesWindowControllerInitCreatesWindow() async throws {
-        let controller = PreferencesWindowController()
+        // Must use convenience initializer explicitly (inherited init() from NSWindowController has nil window)
+        let controller = PreferencesWindowController(initialCategory: .general)
 
         XCTAssertNotNil(controller.window, "Window should be created in init")
         // Window title may be overridden by SwiftUI's navigationTitle modifier
@@ -56,7 +57,8 @@ final class PreferencesIntegrationTests: XCTestCase {
 
     @MainActor
     func testPreferencesWindowHasSwiftUIContent() async throws {
-        let controller = PreferencesWindowController()
+        // Must use convenience initializer explicitly (inherited init() from NSWindowController has nil window)
+        let controller = PreferencesWindowController(initialCategory: .general)
 
         // The content view should be an NSHostingView
         let contentView = controller.window?.contentView
@@ -69,14 +71,16 @@ final class PreferencesIntegrationTests: XCTestCase {
 
     @MainActor
     func testPreferencesWindowIsNotReleasedWhenClosed() async throws {
-        let controller = PreferencesWindowController()
+        // Must use convenience initializer explicitly (inherited init() from NSWindowController has nil window)
+        let controller = PreferencesWindowController(initialCategory: .general)
 
         XCTAssertFalse(controller.window?.isReleasedWhenClosed ?? true, "Window should not be released when closed")
     }
 
     @MainActor
     func testPreferencesWindowStyleMask() async throws {
-        let controller = PreferencesWindowController()
+        // Must use convenience initializer explicitly (inherited init() from NSWindowController has nil window)
+        let controller = PreferencesWindowController(initialCategory: .general)
 
         let styleMask = controller.window?.styleMask ?? []
 
