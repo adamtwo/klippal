@@ -101,7 +101,13 @@ struct OverlayView: View {
             ViewToggleBar(
                 showingPinnedOnly: $viewModel.showingPinnedOnly,
                 pinnedCount: viewModel.pinnedCount,
-                onToggle: { viewModel.setShowingPinnedOnly($0) }
+                onToggle: { viewModel.setShowingPinnedOnly($0) },
+                onSettings: {
+                    viewModel.closeWindow()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        PreferencesWindowController.show()
+                    }
+                }
             )
 
             // Items list
@@ -228,21 +234,6 @@ struct OverlayView: View {
                     KeyboardHintView(keys: "esc", action: "close")
                 }
                 .accessibilityHidden(true)
-
-                // Settings button
-                Button(action: {
-                    viewModel.closeWindow()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        PreferencesWindowController.show()
-                    }
-                }) {
-                    Image(systemName: "gear")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Open Preferences")
-                .accessibilityLabel("Open Preferences")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -400,6 +391,7 @@ struct ViewToggleBar: View {
     @Binding var showingPinnedOnly: Bool
     let pinnedCount: Int
     let onToggle: (Bool) -> Void
+    let onSettings: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -449,6 +441,16 @@ struct ViewToggleBar: View {
             .buttonStyle(.plain)
 
             Spacer()
+
+            // Settings button
+            Button(action: onSettings) {
+                Image(systemName: "gear")
+                    .font(.system(size: 14))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Open Preferences")
+            .accessibilityLabel("Open Preferences")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
