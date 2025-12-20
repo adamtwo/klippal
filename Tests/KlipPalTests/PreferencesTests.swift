@@ -127,7 +127,8 @@ final class PreferencesTests: XCTestCase {
 
     @MainActor
     func testPreferencesWindowControllerCreatesWindow() async throws {
-        let controller = PreferencesWindowController()
+        // Must use convenience initializer explicitly (inherited init() from NSWindowController has nil window)
+        let controller = PreferencesWindowController(initialCategory: .general)
 
         XCTAssertNotNil(controller.window, "Window should be created")
         // Window title may be overridden by SwiftUI's navigationTitle modifier
@@ -150,14 +151,16 @@ final class PreferencesTests: XCTestCase {
 
     @MainActor
     func testPreferencesWindowIsNotReleasedWhenClosed() async throws {
-        let controller = PreferencesWindowController()
+        // Must use convenience initializer explicitly (inherited init() from NSWindowController has nil window)
+        let controller = PreferencesWindowController(initialCategory: .general)
 
         XCTAssertFalse(controller.window?.isReleasedWhenClosed ?? true, "Window should not be released when closed")
     }
 
     @MainActor
     func testPreferencesWindowHasCorrectSize() async throws {
-        let controller = PreferencesWindowController()
+        // Must use convenience initializer explicitly (inherited init() from NSWindowController has nil window)
+        let controller = PreferencesWindowController(initialCategory: .general)
 
         let frame = controller.window?.frame
         // Window uses sidebar layout with minWidth 550
@@ -168,7 +171,8 @@ final class PreferencesTests: XCTestCase {
 
     @MainActor
     func testPreferencesWindowHasContentView() async throws {
-        let controller = PreferencesWindowController()
+        // Must use convenience initializer explicitly (inherited init() from NSWindowController has nil window)
+        let controller = PreferencesWindowController(initialCategory: .general)
 
         XCTAssertNotNil(controller.window?.contentView, "Window should have content view")
     }
