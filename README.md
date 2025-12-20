@@ -8,6 +8,10 @@ Ever copied something, then copied something else, and lost the first thing? Kli
 
 **Your data stays on your Mac.** No cloud sync, no accounts, no tracking. Just a simple tool that does one thing well.
 
+## Demo
+
+[![KlipPal Demo](https://customer-3qavti5dlaqw85hj.cloudflarestream.com/fdda251f4a55407fc8f0fb9b305798a2/thumbnails/thumbnail.jpg?time=&height=600)](https://customer-3qavti5dlaqw85hj.cloudflarestream.com/fdda251f4a55407fc8f0fb9b305798a2/watch)
+
 ## Features
 
 ### Instant Access
