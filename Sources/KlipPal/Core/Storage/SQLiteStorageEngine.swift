@@ -30,12 +30,65 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
         sqlite3_close(db)
     }
 
-    // MARK: - Schema Setup
+    // MARK: - Schema Setup and Migrations
 
     private func setupSchema() async throws {
-        for sql in DatabaseSchema.allSetupStatements {
+        // Create base tables if they don't exist
+        for sql in DatabaseSchema.initialSetupStatements {
             try await execute(sql)
         }
+
+        // Check current version and run migrations if needed
+        let currentVersion = try await getSchemaVersion()
+
+        if currentVersion < DatabaseSchema.currentVersion {
+            try await runMigrations(from: currentVersion)
+        } else if currentVersion == 0 {
+            // New database - set initial version
+            try await execute(DatabaseSchema.setVersion(DatabaseSchema.currentVersion))
+        }
+    }
+
+    /// Get the current schema version from the database
+    private func getSchemaVersion() async throws -> Int {
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+
+        guard sqlite3_prepare_v2(db, DatabaseSchema.getVersion, -1, &statement, nil) == SQLITE_OK else {
+            // Table might not exist yet - return 0
+            return 0
+        }
+
+        if sqlite3_step(statement) == SQLITE_ROW {
+            return Int(sqlite3_column_int(statement, 0))
+        }
+
+        // No version found - new database
+        return 0
+    }
+
+    /// Run all migrations from the given version to current
+    private func runMigrations(from fromVersion: Int) async throws {
+        let migrations = DatabaseSchema.migrationsNeeded(from: fromVersion)
+
+        for migration in migrations {
+            print("📦 Running migration v\(migration.fromVersion) → v\(migration.toVersion)")
+
+            for sql in migration.statements {
+                try await execute(sql)
+            }
+
+            // Update version after each successful migration
+            try await execute(DatabaseSchema.setVersion(migration.toVersion))
+        }
+
+        // Ensure we're at the current version
+        if migrations.isEmpty && fromVersion < DatabaseSchema.currentVersion {
+            // No migrations defined but version is old - just update version
+            try await execute(DatabaseSchema.setVersion(DatabaseSchema.currentVersion))
+        }
+
+        print("✅ Database migrated to v\(DatabaseSchema.currentVersion)")
     }
 
     // MARK: - StorageEngineProtocol Implementation
