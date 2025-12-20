@@ -26,6 +26,14 @@ Type to filter through your history. KlipPal searches the content of everything 
 - Images and screenshots
 - File paths
 
+### Pin Important Items
+Keep your most-used items safe by pinning them. Pinned items:
+- Never get automatically deleted
+- Can be viewed separately with the "Pinned" filter
+- Stay accessible even when you reach your history limit
+
+Click the pin icon on any item to pin or unpin it.
+
 ### Stays Out of Your Way
 - Lives in your menu bar as a small "Kᵖ" icon
 - No dock icon cluttering your screen
