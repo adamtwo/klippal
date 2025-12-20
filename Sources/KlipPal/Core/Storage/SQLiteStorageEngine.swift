@@ -84,7 +84,7 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
             sql += " WHERE is_favorite = 1"
         }
 
-        sql += " ORDER BY is_favorite DESC, timestamp DESC"
+        sql += " ORDER BY timestamp DESC"
 
         if let limit = limit {
             sql += " LIMIT \(limit)"

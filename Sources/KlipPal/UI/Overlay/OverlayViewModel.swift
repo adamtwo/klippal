@@ -18,6 +18,8 @@ class OverlayViewModel: ObservableObject {
     @Published var showCopiedFeedback: Bool = false
     /// Incremented to trigger scroll to top when window opens
     @Published var scrollToTopTrigger: Int = 0
+    /// Whether to show only pinned (favorite) items
+    @Published var showingPinnedOnly: Bool = false
 
     /// Current search query - stored to re-apply after reloading items
     private var currentSearchQuery: String = ""
@@ -64,12 +66,8 @@ class OverlayViewModel: ObservableObject {
             do {
                 let limit = PreferencesManager.shared.historyLimit
                 items = try await storage.fetchItems(limit: limit, favoriteOnly: false)
-                // Re-apply current search query (preferences or items may have changed)
-                if currentSearchQuery.isEmpty {
-                    filteredItems = items
-                } else {
-                    search(query: currentSearchQuery)
-                }
+                // Re-apply current filters (search query and/or pinned-only mode)
+                applyFilters()
                 // Always reset selection to first item when window appears
                 selectedIndex = 0
                 // Trigger scroll to top
@@ -147,17 +145,8 @@ class OverlayViewModel: ObservableObject {
     func search(query: String) {
         // Store the query to re-apply after reloading items
         currentSearchQuery = query
-        // Sync fuzzy search setting from preferences
-        searchEngine.fuzzyMatchingEnabled = PreferencesManager.shared.fuzzySearchEnabled
-        searchResults = searchEngine.search(query: query, in: items)
-        filteredItems = searchResults.map { $0.item }
-
-        // Reset selection to be within bounds
-        if filteredItems.isEmpty {
-            selectedIndex = 0
-        } else if selectedIndex >= filteredItems.count {
-            selectedIndex = 0
-        }
+        // Apply filters (handles both search and pinned-only mode)
+        applyFilters()
     }
 
     /// Gets the matched ranges for highlighting at a given index
@@ -297,6 +286,77 @@ class OverlayViewModel: ObservableObject {
             } catch {
                 print("❌ Failed to delete item: \(error)")
             }
+        }
+    }
+
+    // MARK: - Pinned Items
+
+    /// Number of pinned (favorite) items
+    var pinnedCount: Int {
+        items.filter { $0.isFavorite }.count
+    }
+
+    /// Toggle the favorite/pinned status of an item
+    func toggleFavorite(_ item: ClipboardItem) {
+        Task {
+            do {
+                // Create updated item with toggled favorite status
+                var updatedItem = item
+                updatedItem.isFavorite = !item.isFavorite
+
+                // Save to storage
+                try await storage.save(updatedItem)
+                print("📌 Toggled favorite for: \(item.content.prefix(50))... -> \(updatedItem.isFavorite)")
+
+                // Update in local arrays
+                if let index = items.firstIndex(where: { $0.id == item.id }) {
+                    items[index] = updatedItem
+                }
+                if let index = filteredItems.firstIndex(where: { $0.id == item.id }) {
+                    filteredItems[index] = updatedItem
+                }
+
+                // If in pinned-only mode and item was unpinned, remove from filtered
+                if showingPinnedOnly && !updatedItem.isFavorite {
+                    filteredItems.removeAll { $0.id == item.id }
+                    // Adjust selected index if needed
+                    if selectedIndex >= filteredItems.count {
+                        selectedIndex = max(0, filteredItems.count - 1)
+                    }
+                }
+            } catch {
+                print("❌ Failed to toggle favorite: \(error)")
+            }
+        }
+    }
+
+    /// Set whether to show only pinned items
+    func setShowingPinnedOnly(_ value: Bool) {
+        showingPinnedOnly = value
+        applyFilters()
+    }
+
+    /// Apply current filters (search query and pinned-only mode) to items
+    private func applyFilters() {
+        // Determine the base items to filter/search
+        let baseItems = showingPinnedOnly ? items.filter { $0.isFavorite } : items
+
+        if !currentSearchQuery.isEmpty {
+            // Search within the appropriate items (all or pinned only)
+            searchEngine.fuzzyMatchingEnabled = PreferencesManager.shared.fuzzySearchEnabled
+            searchResults = searchEngine.search(query: currentSearchQuery, in: baseItems)
+            filteredItems = searchResults.map { $0.item }
+        } else {
+            // No search - just show the base items
+            filteredItems = baseItems
+            searchResults = []
+        }
+
+        // Reset selection to be within bounds
+        if filteredItems.isEmpty {
+            selectedIndex = 0
+        } else if selectedIndex >= filteredItems.count {
+            selectedIndex = 0
         }
     }
 }

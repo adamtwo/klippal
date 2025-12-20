@@ -16,6 +16,50 @@ struct OverlayView: View {
         !searchText.isEmpty && !preferences.fuzzySearchEnabled
     }
 
+    /// Icon for empty state based on current view mode
+    private var emptyStateIcon: String {
+        if !searchText.isEmpty {
+            return "magnifyingglass"
+        } else if viewModel.showingPinnedOnly {
+            return "pin"
+        } else {
+            return "doc.on.clipboard"
+        }
+    }
+
+    /// Title for empty state based on current view mode
+    private var emptyStateTitle: String {
+        if !searchText.isEmpty {
+            return "No Results Found"
+        } else if viewModel.showingPinnedOnly {
+            return "No Pinned Items"
+        } else {
+            return "No Clipboard History"
+        }
+    }
+
+    /// Subtitle for empty state based on current view mode
+    private var emptyStateSubtitle: String {
+        if !searchText.isEmpty {
+            return "Try a different search term"
+        } else if viewModel.showingPinnedOnly {
+            return "Pin items to keep them from being deleted"
+        } else {
+            return "Copy text, images, or files to see them here"
+        }
+    }
+
+    /// Accessibility label for empty state
+    private var emptyStateAccessibilityLabel: String {
+        if !searchText.isEmpty {
+            return "No results found for \(searchText)"
+        } else if viewModel.showingPinnedOnly {
+            return "No pinned items. Pin items to keep them from being deleted."
+        } else {
+            return "No clipboard history. Copy text, images, or files to see them here."
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Search bar
@@ -53,6 +97,13 @@ struct OverlayView: View {
 
             Divider()
 
+            // Toggle bar for History/Pinned
+            ViewToggleBar(
+                showingPinnedOnly: $viewModel.showingPinnedOnly,
+                pinnedCount: viewModel.pinnedCount,
+                onToggle: { viewModel.setShowingPinnedOnly($0) }
+            )
+
             // Items list
             if viewModel.filteredItems.isEmpty {
                 VStack(spacing: 16) {
@@ -62,26 +113,24 @@ struct OverlayView: View {
                             .fill(Color.accentColor.opacity(0.1))
                             .frame(width: 80, height: 80)
 
-                        Image(systemName: searchText.isEmpty ? "doc.on.clipboard" : "magnifyingglass")
+                        Image(systemName: emptyStateIcon)
                             .font(.system(size: 36, weight: .light))
                             .foregroundColor(.accentColor.opacity(0.8))
                     }
                     .accessibilityHidden(true)
 
                     VStack(spacing: 6) {
-                        Text(searchText.isEmpty ? "No Clipboard History" : "No Results Found")
+                        Text(emptyStateTitle)
                             .font(.headline)
                             .foregroundColor(.primary)
 
-                        Text(searchText.isEmpty
-                            ? "Copy text, images, or files to see them here"
-                            : "Try a different search term")
+                        Text(emptyStateSubtitle)
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
                     }
 
-                    if searchText.isEmpty {
+                    if searchText.isEmpty && !viewModel.showingPinnedOnly {
                         Text("Press ⌘C anywhere to copy")
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -93,9 +142,7 @@ struct OverlayView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel(searchText.isEmpty
-                    ? "No clipboard history. Copy text, images, or files to see them here."
-                    : "No results found for \(searchText)")
+                .accessibilityLabel(emptyStateAccessibilityLabel)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -117,6 +164,7 @@ struct OverlayView: View {
                                     highlightRanges: viewModel.matchedRanges(at: index),
                                     thumbnailImage: viewModel.thumbnail(for: item),
                                     onDelete: { viewModel.deleteItem(item) },
+                                    onToggleFavorite: { viewModel.toggleFavorite(item) },
                                     onSingleClick: {
                                         // Single-click: just select (no copy)
                                         viewModel.selectedIndex = index
@@ -342,5 +390,68 @@ struct CopiedToastView: View {
         .cornerRadius(8)
         .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
         .padding(.top, 60)
+    }
+}
+
+// MARK: - View Toggle Bar
+
+/// Toggle bar for switching between History and Pinned views
+struct ViewToggleBar: View {
+    @Binding var showingPinnedOnly: Bool
+    let pinnedCount: Int
+    let onToggle: (Bool) -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // History button
+            Button(action: {
+                onToggle(false)
+            }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 11))
+                    Text("History")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(!showingPinnedOnly ? Color.accentColor.opacity(0.15) : Color.clear)
+                )
+                .foregroundColor(!showingPinnedOnly ? .accentColor : .secondary)
+            }
+            .buttonStyle(.plain)
+
+            // Pinned button
+            Button(action: {
+                onToggle(true)
+            }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 11))
+                    Text("Pinned")
+                        .font(.system(size: 12, weight: .medium))
+                    if pinnedCount > 0 {
+                        Text("(\(pinnedCount))")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(showingPinnedOnly ? Color.accentColor.opacity(0.15) : Color.clear)
+                )
+                .foregroundColor(showingPinnedOnly ? .accentColor : .secondary)
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
     }
 }

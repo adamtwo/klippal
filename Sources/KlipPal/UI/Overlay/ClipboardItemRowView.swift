@@ -7,6 +7,7 @@ struct ClipboardItemRowView: View {
     let highlightRanges: [NSRange]
     let thumbnailImage: NSImage?
     var onDelete: (() -> Void)?
+    var onToggleFavorite: (() -> Void)?
     var onSingleClick: (() -> Void)?
     var onDoubleClick: (() -> Void)?
     var onLoadFullImage: (() async -> NSImage?)?
@@ -21,12 +22,13 @@ struct ClipboardItemRowView: View {
     /// Using .leading positions the popover to the left of the main window
     static let popoverArrowEdge: Edge = .leading
 
-    init(item: ClipboardItem, isSelected: Bool, highlightRanges: [NSRange] = [], thumbnailImage: NSImage? = nil, onDelete: (() -> Void)? = nil, onSingleClick: (() -> Void)? = nil, onDoubleClick: (() -> Void)? = nil, onLoadFullImage: (() async -> NSImage?)? = nil) {
+    init(item: ClipboardItem, isSelected: Bool, highlightRanges: [NSRange] = [], thumbnailImage: NSImage? = nil, onDelete: (() -> Void)? = nil, onToggleFavorite: (() -> Void)? = nil, onSingleClick: (() -> Void)? = nil, onDoubleClick: (() -> Void)? = nil, onLoadFullImage: (() async -> NSImage?)? = nil) {
         self.item = item
         self.isSelected = isSelected
         self.highlightRanges = highlightRanges
         self.thumbnailImage = thumbnailImage
         self.onDelete = onDelete
+        self.onToggleFavorite = onToggleFavorite
         self.onSingleClick = onSingleClick
         self.onDoubleClick = onDoubleClick
         self.onLoadFullImage = onLoadFullImage
@@ -165,12 +167,6 @@ struct ClipboardItemRowView: View {
                             }
 
                             Spacer()
-
-                            if item.isFavorite {
-                                Image(systemName: "star.fill")
-                                    .font(.caption)
-                                    .foregroundColor(.yellow)
-                            }
                         }
                     }
                 }
@@ -183,6 +179,17 @@ struct ClipboardItemRowView: View {
                         onSingleClick?()
                     }
                 )
+
+            // Pin button - toggles favorite status
+            if let onToggleFavorite = onToggleFavorite {
+                Button(action: onToggleFavorite) {
+                    Image(systemName: item.isFavorite ? "pin.fill" : "pin")
+                        .font(.system(size: 16))
+                        .foregroundColor(item.isFavorite ? .orange : .secondary.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+                .help(item.isFavorite ? "Unpin from favorites" : "Pin to favorites")
+            }
 
             // Delete button - always visible on right side (outside clickable area)
             if let onDelete = onDelete {
