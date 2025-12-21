@@ -3,7 +3,7 @@ import Foundation
 /// Database schema definitions and migrations
 enum DatabaseSchema {
     /// Current schema version
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     /// SQL to create the items table
     static let createItemsTable = """
