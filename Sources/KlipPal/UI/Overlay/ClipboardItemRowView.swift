@@ -102,7 +102,7 @@ struct ClipboardItemRowView: View {
                         )
                     } else {
                         TextPreviewPopover(
-                            content: item.content,
+                            content: item.fullContent,
                             characterCount: item.formattedCharacterCount
                         )
                     }

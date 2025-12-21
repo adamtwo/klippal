@@ -94,12 +94,12 @@ final class DatabaseMigrationTests: XCTestCase {
         let createTable = """
             CREATE TABLE items (
                 id TEXT PRIMARY KEY,
-                content TEXT NOT NULL,
+                summary TEXT NOT NULL,
                 content_type TEXT NOT NULL,
                 content_hash TEXT NOT NULL UNIQUE,
                 timestamp INTEGER NOT NULL,
                 source_app TEXT,
-                blob_path TEXT,
+                content BLOB,
                 is_favorite INTEGER DEFAULT 0
             );
             """
@@ -114,7 +114,7 @@ final class DatabaseMigrationTests: XCTestCase {
         // Insert test data (using valid UUID format)
         let testUUID = UUID().uuidString
         let insertData = """
-            INSERT INTO items (id, content, content_type, content_hash, timestamp, is_favorite)
+            INSERT INTO items (id, summary, content_type, content_hash, timestamp, is_favorite)
             VALUES ('\(testUUID)', 'Legacy content', 'text', 'legacyhash', 1234567890, 0);
             """
         guard sqlite3_exec(db, insertData, nil, nil, &errMsg) == SQLITE_OK else {

@@ -95,7 +95,7 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
 
     func save(_ item: ClipboardItem) async throws {
         let sql = """
-            INSERT OR REPLACE INTO items (id, content, content_type, content_hash, timestamp, source_app, blob_path, is_favorite)
+            INSERT OR REPLACE INTO items (id, summary, content_type, content_hash, timestamp, source_app, content, is_favorite)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?);
             """
 
@@ -118,8 +118,10 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
         } else {
             sqlite3_bind_null(statement, 6)
         }
-        if let blobPath = item.blobPath {
-            sqlite3_bind_text(statement, 7, (blobPath as NSString).utf8String, -1, SQLITE_TRANSIENT)
+        if let blobContent = item.blobContent {
+            _ = blobContent.withUnsafeBytes { bytes in
+                sqlite3_bind_blob(statement, 7, bytes.baseAddress, Int32(blobContent.count), SQLITE_TRANSIENT)
+            }
         } else {
             sqlite3_bind_null(statement, 7)
         }
@@ -131,7 +133,7 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
     }
 
     func fetchItems(limit: Int? = nil, favoriteOnly: Bool = false) async throws -> [ClipboardItem] {
-        var sql = "SELECT id, content, content_type, content_hash, timestamp, source_app, blob_path, is_favorite FROM items"
+        var sql = "SELECT id, summary, content_type, content_hash, timestamp, source_app, content, is_favorite FROM items"
 
         if favoriteOnly {
             sql += " WHERE is_favorite = 1"
@@ -162,7 +164,7 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
     }
 
     func fetchItem(byId id: UUID) async throws -> ClipboardItem? {
-        let sql = "SELECT id, content, content_type, content_hash, timestamp, source_app, blob_path, is_favorite FROM items WHERE id = ?;"
+        let sql = "SELECT id, summary, content_type, content_hash, timestamp, source_app, content, is_favorite FROM items WHERE id = ?;"
 
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
@@ -319,7 +321,14 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
         let timestamp = Date(timeIntervalSince1970: TimeInterval(timestampInt))
 
         let sourceApp = sqlite3_column_text(statement, 5).map { String(cString: $0) }
-        let blobPath = sqlite3_column_text(statement, 6).map { String(cString: $0) }
+
+        // Read blob content
+        var blobContent: Data? = nil
+        let blobSize = sqlite3_column_bytes(statement, 6)
+        if blobSize > 0, let blobPtr = sqlite3_column_blob(statement, 6) {
+            blobContent = Data(bytes: blobPtr, count: Int(blobSize))
+        }
+
         let isFavorite = sqlite3_column_int(statement, 7) == 1
 
         return ClipboardItem(
@@ -329,7 +338,7 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
             contentHash: contentHash,
             timestamp: timestamp,
             sourceApp: sourceApp,
-            blobPath: blobPath,
+            blobContent: blobContent,
             isFavorite: isFavorite
         )
     }

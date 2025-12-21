@@ -5,11 +5,8 @@ import ApplicationServices
 /// Handles pasting clipboard items to the active application
 @MainActor
 class PasteManager {
-    private let blobStorage: BlobStorageManager?
 
-    init(blobStorage: BlobStorageManager? = nil) {
-        self.blobStorage = blobStorage ?? AppDelegate.shared.blobStorage
-    }
+    init() {}
 
     /// Paste an item by restoring it to clipboard and simulating Cmd+V
     func paste(_ item: ClipboardItem) async throws {
@@ -30,27 +27,17 @@ class PasteManager {
 
         switch item.contentType {
         case .image:
-            // Load image from blob storage and restore to clipboard
-            if let blobPath = item.blobPath {
-                do {
-                    if let blobStorage = blobStorage {
-                        let imageData = try await blobStorage.load(relativePath: blobPath)
-                        if let image = NSImage(data: imageData) {
-                            pasteboard.writeObjects([image])
-                            print("📋 Restored image to clipboard from blob: \(blobPath)")
-                        } else {
-                            print("⚠️ Failed to create NSImage from blob data, falling back to text")
-                            pasteboard.setString(item.content, forType: .string)
-                        }
-                    } else {
-                        print("⚠️ Blob storage not available, falling back to text")
-                        pasteboard.setString(item.content, forType: .string)
-                    }
-                } catch {
-                    print("⚠️ Failed to load image blob: \(error), falling back to text")
+            // Load image from blob content and restore to clipboard
+            if let blobContent = item.blobContent {
+                if let image = NSImage(data: blobContent) {
+                    pasteboard.writeObjects([image])
+                    print("📋 Restored image to clipboard from blob content")
+                } else {
+                    print("⚠️ Failed to create NSImage from blob data, falling back to text")
                     pasteboard.setString(item.content, forType: .string)
                 }
             } else {
+                print("⚠️ No blob content available, falling back to text")
                 pasteboard.setString(item.content, forType: .string)
             }
 

@@ -18,7 +18,7 @@ final class PinnedItemsTests: XCTestCase {
         appDelegate.storage = storage
         AppDelegate.shared = appDelegate
 
-        viewModel = OverlayViewModel(storage: storage, blobStorage: nil)
+        viewModel = OverlayViewModel(storage: storage)
     }
 
     override func tearDown() async throws {

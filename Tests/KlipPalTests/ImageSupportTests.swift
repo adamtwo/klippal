@@ -249,184 +249,41 @@ final class ClipboardContentExtractorImageTests: XCTestCase {
     }
 }
 
-// MARK: - BlobStorageManager Image Tests
-
-final class BlobStorageManagerImageTests: XCTestCase {
-    var blobStorage: BlobStorageManager!
-    var tempBlobDir: URL!
-
-    override func setUp() async throws {
-        tempBlobDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("test-blobs-\(UUID().uuidString)")
-        blobStorage = try BlobStorageManager(blobDirectory: tempBlobDir)
-    }
-
-    override func tearDown() async throws {
-        try? FileManager.default.removeItem(at: tempBlobDir)
-    }
-
-    func testSaveImageData() async throws {
-        let image = createTestImage(width: 100, height: 100, color: .red)
-        let imageData = image.tiffRepresentation!
-
-        let path = try await blobStorage.save(imageData: imageData, hash: "test-hash-123")
-
-        XCTAssertFalse(path.isEmpty)
-        XCTAssertTrue(path.contains("test-hash-123"))
-
-        // Verify file exists
-        let fullPath = tempBlobDir.appendingPathComponent(path)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: fullPath.path))
-    }
-
-    func testLoadSavedImage() async throws {
-        let image = createTestImage(width: 100, height: 100, color: .blue)
-        let imageData = image.tiffRepresentation!
-
-        let path = try await blobStorage.save(imageData: imageData, hash: "load-test-456")
-        let loadedData = try await blobStorage.load(relativePath: path)
-
-        XCTAssertFalse(loadedData.isEmpty)
-        // Should be able to create an image from loaded data
-        let loadedImage = NSImage(data: loadedData)
-        XCTAssertNotNil(loadedImage)
-    }
-
-    func testSaveImageRejectsTooLarge() async throws {
-        // Create data larger than 10MB limit
-        let largeData = Data(repeating: 0xFF, count: 11 * 1024 * 1024)
-
-        do {
-            _ = try await blobStorage.save(imageData: largeData, hash: "too-large")
-            XCTFail("Should throw error for image too large")
-        } catch let error as BlobStorageError {
-            if case .imageTooLarge = error {
-                // Expected error
-            } else {
-                XCTFail("Wrong error type: \(error)")
-            }
-        }
-    }
-
-    func testDeleteBlob() async throws {
-        let image = createTestImage(width: 50, height: 50, color: .green)
-        let imageData = image.tiffRepresentation!
-
-        let path = try await blobStorage.save(imageData: imageData, hash: "delete-test")
-
-        // Verify file exists
-        let fullPath = tempBlobDir.appendingPathComponent(path)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: fullPath.path))
-
-        // Delete
-        try await blobStorage.delete(relativePath: path)
-
-        // Verify deleted
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fullPath.path))
-    }
-
-    func testLoadNonExistentBlobThrows() async throws {
-        do {
-            _ = try await blobStorage.load(relativePath: "nonexistent.png")
-            XCTFail("Should throw error for non-existent blob")
-        } catch let error as BlobStorageError {
-            if case .blobNotFound = error {
-                // Expected error
-            } else {
-                XCTFail("Wrong error type: \(error)")
-            }
-        }
-    }
-
-    func testGetTotalSize() async throws {
-        let image = createTestImage(width: 100, height: 100, color: .red)
-        let imageData = image.tiffRepresentation!
-
-        // Save multiple images
-        _ = try await blobStorage.save(imageData: imageData, hash: "size-test-1")
-        _ = try await blobStorage.save(imageData: imageData, hash: "size-test-2")
-
-        let totalSize = try await blobStorage.getTotalSize()
-
-        XCTAssertGreaterThan(totalSize, 0)
-    }
-
-    func testSaveThumbnail() async throws {
-        let image = createTestImage(width: 500, height: 500, color: .orange)
-        let imageData = image.tiffRepresentation!
-
-        let result = try await blobStorage.saveWithThumbnail(
-            imageData: imageData,
-            hash: "thumb-test",
-            thumbnailSize: 80
-        )
-
-        XCTAssertFalse(result.fullPath.isEmpty)
-        XCTAssertFalse(result.thumbnailPath.isEmpty)
-
-        // Verify both files exist
-        let fullImagePath = tempBlobDir.appendingPathComponent(result.fullPath)
-        let thumbPath = tempBlobDir.appendingPathComponent(result.thumbnailPath)
-
-        XCTAssertTrue(FileManager.default.fileExists(atPath: fullImagePath.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: thumbPath.path))
-    }
-
-    // MARK: - Helper Methods
-
-    private func createTestImage(width: Int, height: Int, color: NSColor) -> NSImage {
-        let size = NSSize(width: width, height: height)
-        let image = NSImage(size: size)
-
-        image.lockFocus()
-        color.setFill()
-        NSRect(origin: .zero, size: size).fill()
-        image.unlockFocus()
-
-        return image
-    }
-}
-
 // MARK: - Image Clipboard Integration Tests
 
 final class ImageClipboardIntegrationTests: XCTestCase {
     var storage: SQLiteStorageEngine!
-    var blobStorage: BlobStorageManager!
     var tempDBPath: String!
-    var tempBlobDir: URL!
 
     override func setUp() async throws {
         // Create temporary database
         let tempDir = FileManager.default.temporaryDirectory
         tempDBPath = tempDir.appendingPathComponent("test_img_\(UUID().uuidString).db").path
         storage = try await SQLiteStorageEngine(dbPath: tempDBPath)
-
-        // Create temporary blob storage
-        tempBlobDir = tempDir.appendingPathComponent("test-blobs-\(UUID().uuidString)")
-        blobStorage = try BlobStorageManager(blobDirectory: tempBlobDir)
     }
 
     override func tearDown() async throws {
         try? FileManager.default.removeItem(atPath: tempDBPath)
-        try? FileManager.default.removeItem(at: tempBlobDir)
     }
 
     func testSaveAndRetrieveImageItem() async throws {
         // Create image data
         let image = createTestImage(width: 100, height: 100, color: .red)
-        let imageData = image.tiffRepresentation!
-        let hash = SHA256Hasher.hash(data: imageData)
+        guard let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let pngData = bitmap.representation(using: .png, properties: [:]) else {
+            XCTFail("Failed to create PNG data")
+            return
+        }
+        let hash = SHA256Hasher.hash(data: pngData)
 
-        // Save to blob storage
-        let blobPath = try await blobStorage.save(imageData: imageData, hash: hash)
-
-        // Create clipboard item with blob path
+        // Create clipboard item with blob content
         let item = ClipboardItem(
             content: "[Image copied at \(Date().formatted())]",
             contentType: .image,
             contentHash: hash,
             sourceApp: "TestApp",
-            blobPath: blobPath
+            blobContent: pngData
         )
 
         // Save to database
@@ -437,11 +294,8 @@ final class ImageClipboardIntegrationTests: XCTestCase {
 
         XCTAssertEqual(items.count, 1)
         XCTAssertEqual(items.first?.contentType, .image)
-        XCTAssertNotNil(items.first?.blobPath)
-
-        // Load blob data
-        let loadedData = try await blobStorage.load(relativePath: items.first!.blobPath!)
-        XCTAssertFalse(loadedData.isEmpty)
+        XCTAssertNotNil(items.first?.blobContent)
+        XCTAssertEqual(items.first?.blobContent, pngData)
     }
 
     func testImageItemPreviewText() async throws {
@@ -449,41 +303,73 @@ final class ImageClipboardIntegrationTests: XCTestCase {
             content: "[Image copied at 2024-01-15]",
             contentType: .image,
             contentHash: "test-hash",
-            blobPath: "test.png"
+            blobContent: Data([0x01, 0x02])
         )
 
         XCTAssertEqual(item.preview, "[Image]")
     }
 
-    func testDeleteImageItemCleansUpBlob() async throws {
+    func testDeleteImageItem() async throws {
         // Create and save image
         let image = createTestImage(width: 50, height: 50, color: .blue)
-        let imageData = image.tiffRepresentation!
-        let hash = SHA256Hasher.hash(data: imageData)
-
-        let blobPath = try await blobStorage.save(imageData: imageData, hash: hash)
+        guard let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let pngData = bitmap.representation(using: .png, properties: [:]) else {
+            XCTFail("Failed to create PNG data")
+            return
+        }
+        let hash = SHA256Hasher.hash(data: pngData)
 
         let item = ClipboardItem(
             content: "[Image]",
             contentType: .image,
             contentHash: hash,
-            blobPath: blobPath
+            blobContent: pngData
         )
 
         try await storage.save(item)
 
-        // Verify blob exists
-        let fullPath = tempBlobDir.appendingPathComponent(blobPath)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: fullPath.path))
+        // Verify saved
+        var count = try await storage.count()
+        XCTAssertEqual(count, 1)
 
         // Delete item
         try await storage.delete(item)
 
-        // Clean up blob
-        try await blobStorage.delete(relativePath: blobPath)
+        // Verify deleted
+        count = try await storage.count()
+        XCTAssertEqual(count, 0)
+    }
 
-        // Verify blob is deleted
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fullPath.path))
+    func testRecreateImageFromBlobContent() async throws {
+        // Create original image
+        let originalImage = createTestImage(width: 100, height: 100, color: .cyan)
+        guard let tiffData = originalImage.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let pngData = bitmap.representation(using: .png, properties: [:]) else {
+            XCTFail("Failed to create PNG data")
+            return
+        }
+        let hash = SHA256Hasher.hash(data: pngData)
+
+        let item = ClipboardItem(
+            content: "[Image 100x100]",
+            contentType: .image,
+            contentHash: hash,
+            blobContent: pngData
+        )
+
+        try await storage.save(item)
+
+        // Fetch and recreate image
+        let items = try await storage.fetchItems(limit: nil, favoriteOnly: false)
+        guard let blobContent = items.first?.blobContent else {
+            XCTFail("No blob content returned")
+            return
+        }
+
+        let recreatedImage = NSImage(data: blobContent)
+        XCTAssertNotNil(recreatedImage, "Should be able to recreate NSImage from blob content")
     }
 
     // MARK: - Helper Methods

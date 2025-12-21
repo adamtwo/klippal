@@ -9,12 +9,12 @@ enum DatabaseSchema {
     static let createItemsTable = """
         CREATE TABLE IF NOT EXISTS items (
             id TEXT PRIMARY KEY,
-            content TEXT NOT NULL,
+            summary TEXT NOT NULL,
             content_type TEXT NOT NULL,
             content_hash TEXT NOT NULL UNIQUE,
             timestamp INTEGER NOT NULL,
             source_app TEXT,
-            blob_path TEXT,
+            content BLOB,
             is_favorite INTEGER DEFAULT 0
         );
         """

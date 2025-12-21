@@ -20,8 +20,8 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
     /// Application that was active when copied (optional)
     let sourceApp: String?
 
-    /// Path to blob storage for images (optional)
-    var blobPath: String?
+    /// Binary content for images stored directly in database (optional)
+    var blobContent: Data?
 
     /// Whether this item is pinned/favorited
     var isFavorite: Bool
@@ -33,7 +33,7 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
         contentHash: String,
         timestamp: Date = Date(),
         sourceApp: String? = nil,
-        blobPath: String? = nil,
+        blobContent: Data? = nil,
         isFavorite: Bool = false
     ) {
         self.id = id
@@ -42,7 +42,7 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
         self.contentHash = contentHash
         self.timestamp = timestamp
         self.sourceApp = sourceApp
-        self.blobPath = blobPath
+        self.blobContent = blobContent
         self.isFavorite = isFavorite
     }
 
@@ -68,19 +68,32 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
         }
     }
 
-    /// Whether the content is truncated in the preview
+    /// Whether the content is truncated in the preview (based on blob size)
     var isTruncated: Bool {
         switch contentType {
         case .text, .url:
-            return content.count > Self.previewLimit
+            let fullSize = blobContent?.count ?? content.count
+            return fullSize > Self.previewLimit
         case .image, .fileURL:
             return false
         }
     }
 
-    /// Character count of the full content
+    /// Character count of the full content (based on blob size for text)
     var characterCount: Int {
-        content.count
+        if let blobContent = blobContent, contentType == .text || contentType == .url {
+            // For text, blob is UTF-8 encoded - use blob size as approximate char count
+            return blobContent.count
+        }
+        return content.count
+    }
+
+    /// Full text content from blob (for preview popover)
+    var fullContent: String {
+        if let blobContent = blobContent, contentType == .text || contentType == .url {
+            return String(data: blobContent, encoding: .utf8) ?? content
+        }
+        return content
     }
 
     /// Formatted character count string (e.g., "1.2K chars" or "150 chars")

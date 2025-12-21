@@ -13,16 +13,17 @@ class ClipboardMonitor: ObservableObject {
     private var timer: Timer?
     private let storage: StorageEngineProtocol
     private let deduplicator: ClipboardDeduplicator
-    private let blobStorage: BlobStorageManager?
     private let excludedAppsManager: ExcludedAppsManager?
 
     /// Polling interval in seconds (0.5s = 500ms)
     private let pollingInterval: TimeInterval = 0.5
 
-    init(storage: StorageEngineProtocol, blobStorage: BlobStorageManager? = nil, excludedAppsManager: ExcludedAppsManager? = nil) {
+    /// Maximum image size to store (10MB)
+    private let maxImageSize: Int = 10 * 1024 * 1024
+
+    init(storage: StorageEngineProtocol, excludedAppsManager: ExcludedAppsManager? = nil) {
         self.storage = storage
         self.deduplicator = ClipboardDeduplicator(storage: storage)
-        self.blobStorage = blobStorage
         self.excludedAppsManager = excludedAppsManager
         self.changeCount = pasteboard.changeCount
     }
@@ -79,23 +80,27 @@ class ClipboardMonitor: ObservableObject {
             return
         }
 
-        // Handle image storage if needed
-        var blobPath: String? = nil
-        if let imageData = imageData, let blobStorage = blobStorage {
-            do {
-                blobPath = try await blobStorage.save(imageData: imageData, hash: hash)
-            } catch {
-                print("⚠️ Failed to save image blob: \(error)")
+        // Store content as blob - for images use imageData, for text use UTF-8 encoded content
+        var blobContent: Data? = nil
+        if let imageData = imageData {
+            if imageData.count <= maxImageSize {
+                blobContent = imageData
+            } else {
+                print("⚠️ Image too large (\(imageData.count) bytes), skipping blob storage")
             }
+        } else {
+            // Store text content as UTF-8 data
+            blobContent = content.data(using: .utf8)
         }
 
-        // Create clipboard item
+        // Create clipboard item (truncate text content to 100 chars for preview)
+        let truncatedContent = type == .image ? content : String(content.prefix(100))
         let item = ClipboardItem(
-            content: content,
+            content: truncatedContent,
             contentType: type,
             contentHash: hash,
             sourceApp: sourceApp,
-            blobPath: blobPath
+            blobContent: blobContent
         )
 
         // Save to storage

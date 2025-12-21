@@ -4,10 +4,8 @@ import XCTest
 @MainActor
 final class ImagePreviewTests: XCTestCase {
     var storage: SQLiteStorageEngine!
-    var blobStorage: BlobStorageManager!
     var viewModel: OverlayViewModel!
     var tempDBPath: String!
-    var tempBlobDir: URL!
 
     override func setUp() async throws {
         // Create temporary database
@@ -15,25 +13,18 @@ final class ImagePreviewTests: XCTestCase {
         tempDBPath = tempDir.appendingPathComponent("test_preview_\(UUID().uuidString).db").path
         storage = try await SQLiteStorageEngine(dbPath: tempDBPath)
 
-        // Create temporary blob storage
-        tempBlobDir = tempDir.appendingPathComponent("blobs_\(UUID().uuidString)")
-        blobStorage = try BlobStorageManager(blobDirectory: tempBlobDir)
-
         // Set up AppDelegate.shared for ViewModel to use
         let appDelegate = AppDelegate()
         appDelegate.storage = storage
-        appDelegate.blobStorage = blobStorage
         AppDelegate.shared = appDelegate
 
-        viewModel = OverlayViewModel(storage: storage, blobStorage: blobStorage)
+        viewModel = OverlayViewModel(storage: storage)
     }
 
     override func tearDown() async throws {
         viewModel = nil
         storage = nil
-        blobStorage = nil
         try? FileManager.default.removeItem(atPath: tempDBPath)
-        try? FileManager.default.removeItem(at: tempBlobDir)
     }
 
     func testLoadFullImageReturnsImageForValidItem() async throws {
@@ -46,16 +37,13 @@ final class ImagePreviewTests: XCTestCase {
             return
         }
 
-        // Save the image blob
+        // Create clipboard item with blob content
         let contentHash = "testimage123"
-        let relativePath = try await blobStorage.save(imageData: pngData, hash: contentHash)
-
-        // Create clipboard item pointing to the blob
         let item = ClipboardItem(
-            content: "100×100 PNG",
+            content: "100x100 PNG",
             contentType: .image,
             contentHash: contentHash,
-            blobPath: relativePath
+            blobContent: pngData
         )
         try await storage.save(item)
 
@@ -81,18 +69,18 @@ final class ImagePreviewTests: XCTestCase {
     }
 
     func testLoadFullImageReturnsNilForMissingBlob() async throws {
-        // Create item pointing to non-existent blob
+        // Create item with no blob content
         let item = ClipboardItem(
-            content: "100×100 PNG",
+            content: "100x100 PNG",
             contentType: .image,
             contentHash: "missing123",
-            blobPath: "missing/path.png"
+            blobContent: nil
         )
         try await storage.save(item)
 
         let loadedImage = await viewModel.loadFullImage(for: item)
 
-        XCTAssertNil(loadedImage, "Should return nil when blob is missing")
+        XCTAssertNil(loadedImage, "Should return nil when blob content is missing")
     }
 
     func testFullImageCacheStoresLoadedImage() async throws {
@@ -106,13 +94,11 @@ final class ImagePreviewTests: XCTestCase {
         }
 
         let contentHash = "cachedimage123"
-        let relativePath = try await blobStorage.save(imageData: pngData, hash: contentHash)
-
         let item = ClipboardItem(
-            content: "50×50 PNG",
+            content: "50x50 PNG",
             contentType: .image,
             contentHash: contentHash,
-            blobPath: relativePath
+            blobContent: pngData
         )
         try await storage.save(item)
 

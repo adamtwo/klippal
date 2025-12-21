@@ -25,7 +25,6 @@ class OverlayViewModel: ObservableObject {
     private var currentSearchQuery: String = ""
 
     private let storage: SQLiteStorageEngine
-    private let blobStorage: BlobStorageManager?
     private let pasteManager: PasteManager
     private let searchEngine = SearchEngine()
     private var notificationObserver: Any?
@@ -36,10 +35,9 @@ class OverlayViewModel: ObservableObject {
     /// Callback invoked to close the window
     var onCloseWindow: (() -> Void)?
 
-    init(storage: SQLiteStorageEngine? = nil, blobStorage: BlobStorageManager? = nil) {
+    init(storage: SQLiteStorageEngine? = nil) {
         // Get shared storage from AppDelegate
         self.storage = storage ?? AppDelegate.shared.storage!
-        self.blobStorage = blobStorage ?? AppDelegate.shared.blobStorage
         self.pasteManager = PasteManager()
 
         // Observe clipboard item additions
@@ -73,38 +71,23 @@ class OverlayViewModel: ObservableObject {
                 // Trigger scroll to top
                 scrollToTopTrigger += 1
                 // Load thumbnails for image items
-                await loadThumbnails(for: items)
+                loadThumbnails(for: items)
             } catch {
-                print("❌ Failed to load items: \(error)")
+                print("Failed to load items: \(error)")
             }
         }
     }
 
-    /// Load thumbnails for image items
-    private func loadThumbnails(for items: [ClipboardItem]) async {
-        guard let blobStorage = blobStorage else { return }
-
+    /// Load thumbnails for image items from their blob content
+    private func loadThumbnails(for items: [ClipboardItem]) {
         for item in items where item.contentType == .image {
             // Skip if already cached
             if thumbnailCache[item.contentHash] != nil { continue }
 
-            // Try to load thumbnail
-            do {
-                let thumbnailData = try await blobStorage.loadThumbnail(hash: item.contentHash)
-                if let image = NSImage(data: thumbnailData) {
-                    thumbnailCache[item.contentHash] = image
-                }
-            } catch {
-                // If thumbnail doesn't exist, try to load from full blob path
-                if let blobPath = item.blobPath {
-                    do {
-                        let imageData = try await blobStorage.load(relativePath: blobPath)
-                        if let thumbnail = ThumbnailGenerator.generateThumbnail(from: imageData, maxSize: 80) {
-                            thumbnailCache[item.contentHash] = thumbnail
-                        }
-                    } catch {
-                        print("⚠️ Failed to load image for thumbnail: \(error)")
-                    }
+            // Generate thumbnail from blob content
+            if let blobContent = item.blobContent {
+                if let thumbnail = ThumbnailGenerator.generateThumbnail(from: blobContent, maxSize: 80) {
+                    thumbnailCache[item.contentHash] = thumbnail
                 }
             }
         }
@@ -125,18 +108,12 @@ class OverlayViewModel: ObservableObject {
             return cached
         }
 
-        // Load from blob storage
-        guard let blobStorage = blobStorage,
-              let blobPath = item.blobPath else { return nil }
+        // Load from blob content
+        guard let blobContent = item.blobContent else { return nil }
 
-        do {
-            let imageData = try await blobStorage.load(relativePath: blobPath)
-            if let image = NSImage(data: imageData) {
-                fullImageCache[item.contentHash] = image
-                return image
-            }
-        } catch {
-            print("⚠️ Failed to load full image: \(error)")
+        if let image = NSImage(data: blobContent) {
+            fullImageCache[item.contentHash] = image
+            return image
         }
 
         return nil
@@ -180,15 +157,15 @@ class OverlayViewModel: ObservableObject {
     }
 
     func pasteItem(_ item: ClipboardItem) {
-        print("📋 Pasting item: \(item.content.prefix(50))...")
+        print("Pasting item: \(item.content.prefix(50))...")
 
         // Update timestamp to bring item to top of history
         Task {
             do {
                 try await storage.updateTimestamp(forHash: item.contentHash)
-                print("🔄 Updated timestamp for pasted item")
+                print("Updated timestamp for pasted item")
             } catch {
-                print("⚠️ Failed to update timestamp: \(error)")
+                print("Failed to update timestamp: \(error)")
             }
         }
 
@@ -199,10 +176,10 @@ class OverlayViewModel: ObservableObject {
             do {
                 // Longer delay to allow window to close and app to switch
                 try await Task.sleep(nanoseconds: 200_000_000) // 200ms
-                print("📋 Starting paste simulation...")
+                print("Starting paste simulation...")
                 try await pasteManager.paste(item)
             } catch {
-                print("❌ Failed to paste: \(error)")
+                print("Failed to paste: \(error)")
             }
         }
     }
@@ -212,14 +189,14 @@ class OverlayViewModel: ObservableObject {
     func selectNext() {
         guard !filteredItems.isEmpty else { return }
         selectedIndex = min(selectedIndex + 1, filteredItems.count - 1)
-        print("⌨️ Selected index: \(selectedIndex)")
+        print("Selected index: \(selectedIndex)")
         triggerScrollToSelection()
     }
 
     func selectPrevious() {
         guard !filteredItems.isEmpty else { return }
         selectedIndex = max(selectedIndex - 1, 0)
-        print("⌨️ Selected index: \(selectedIndex)")
+        print("Selected index: \(selectedIndex)")
         triggerScrollToSelection()
     }
 
@@ -243,15 +220,15 @@ class OverlayViewModel: ObservableObject {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(item.content, forType: .string)
-        print("📋 Copied to clipboard: \(item.content.prefix(50))...")
+        print("Copied to clipboard: \(item.content.prefix(50))...")
 
         // Update timestamp to bring item to top of history
         Task {
             do {
                 try await storage.updateTimestamp(forHash: item.contentHash)
-                print("🔄 Updated timestamp for copied item")
+                print("Updated timestamp for copied item")
             } catch {
-                print("⚠️ Failed to update timestamp: \(error)")
+                print("Failed to update timestamp: \(error)")
             }
         }
 
@@ -273,7 +250,7 @@ class OverlayViewModel: ObservableObject {
         Task {
             do {
                 try await storage.delete(item)
-                print("🗑️ Deleted item: \(item.content.prefix(50))...")
+                print("Deleted item: \(item.content.prefix(50))...")
 
                 // Remove from local arrays
                 items.removeAll { $0.id == item.id }
@@ -284,7 +261,7 @@ class OverlayViewModel: ObservableObject {
                     selectedIndex = max(0, filteredItems.count - 1)
                 }
             } catch {
-                print("❌ Failed to delete item: \(error)")
+                print("Failed to delete item: \(error)")
             }
         }
     }
@@ -306,7 +283,7 @@ class OverlayViewModel: ObservableObject {
 
                 // Save to storage
                 try await storage.save(updatedItem)
-                print("📌 Toggled favorite for: \(item.content.prefix(50))... -> \(updatedItem.isFavorite)")
+                print("Toggled favorite for: \(item.content.prefix(50))... -> \(updatedItem.isFavorite)")
 
                 // Update in local arrays
                 if let index = items.firstIndex(where: { $0.id == item.id }) {
@@ -325,7 +302,7 @@ class OverlayViewModel: ObservableObject {
                     }
                 }
             } catch {
-                print("❌ Failed to toggle favorite: \(error)")
+                print("Failed to toggle favorite: \(error)")
             }
         }
     }
