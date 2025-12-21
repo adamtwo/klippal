@@ -290,7 +290,7 @@ final class ImageClipboardIntegrationTests: XCTestCase {
         try await storage.save(item)
 
         // Retrieve
-        let items = try await storage.fetchItems(limit: 10, favoriteOnly: false)
+        let items = try await storage.fetchItems(limit: 10, favoriteOnly: false, includeContent: true)
 
         XCTAssertEqual(items.count, 1)
         XCTAssertEqual(items.first?.contentType, .image)
@@ -362,7 +362,7 @@ final class ImageClipboardIntegrationTests: XCTestCase {
         try await storage.save(item)
 
         // Fetch and recreate image
-        let items = try await storage.fetchItems(limit: nil, favoriteOnly: false)
+        let items = try await storage.fetchItems(limit: nil, favoriteOnly: false, includeContent: true)
         guard let blobContent = items.first?.blobContent else {
             XCTFail("No blob content returned")
             return

@@ -20,6 +20,14 @@ class StatusBarController: NSObject, NSMenuDelegate {
         setupStatusItem()
     }
 
+    /// Pre-create the overlay window controller with pre-loaded items
+    /// Called after storage is initialized
+    func preloadOverlay(with items: [ClipboardItem] = []) {
+        if overlayWindow == nil {
+            overlayWindow = OverlayWindowController(preloadedItems: items)
+        }
+    }
+
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 

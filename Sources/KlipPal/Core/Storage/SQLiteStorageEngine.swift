@@ -132,8 +132,14 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
         }
     }
 
-    func fetchItems(limit: Int? = nil, favoriteOnly: Bool = false) async throws -> [ClipboardItem] {
-        var sql = "SELECT id, summary, content_type, content_hash, timestamp, source_app, content, is_favorite FROM items"
+    func fetchItems(limit: Int? = nil, favoriteOnly: Bool = false, includeContent: Bool = false) async throws -> [ClipboardItem] {
+        // By default, exclude blob content for list display - use length(content) for size
+        var sql: String
+        if includeContent {
+            sql = "SELECT id, summary, content_type, content_hash, timestamp, source_app, content, is_favorite FROM items"
+        } else {
+            sql = "SELECT id, summary, content_type, content_hash, timestamp, source_app, length(content), is_favorite FROM items"
+        }
 
         if favoriteOnly {
             sql += " WHERE is_favorite = 1"
@@ -155,8 +161,14 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
         var items: [ClipboardItem] = []
 
         while sqlite3_step(statement) == SQLITE_ROW {
-            if let item = parseClipboardItem(from: statement) {
-                items.append(item)
+            if includeContent {
+                if let item = parseClipboardItem(from: statement) {
+                    items.append(item)
+                }
+            } else {
+                if let item = parseClipboardItemWithoutBlob(from: statement) {
+                    items.append(item)
+                }
             }
         }
 
@@ -341,6 +353,67 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
             blobContent: blobContent,
             isFavorite: isFavorite
         )
+    }
+
+    /// Parse a ClipboardItem without blob content (for list display)
+    /// Column order: id, summary, content_type, content_hash, timestamp, source_app, length(content), is_favorite
+    private func parseClipboardItemWithoutBlob(from statement: OpaquePointer?) -> ClipboardItem? {
+        guard let statement = statement else { return nil }
+
+        guard let idString = sqlite3_column_text(statement, 0).map({ String(cString: $0) }),
+              let id = UUID(uuidString: idString),
+              let content = sqlite3_column_text(statement, 1).map({ String(cString: $0) }),
+              let contentTypeRaw = sqlite3_column_text(statement, 2).map({ String(cString: $0) }),
+              let contentType = ClipboardContentType(rawValue: contentTypeRaw),
+              let contentHash = sqlite3_column_text(statement, 3).map({ String(cString: $0) }) else {
+            return nil
+        }
+
+        let timestampInt = sqlite3_column_int64(statement, 4)
+        let timestamp = Date(timeIntervalSince1970: TimeInterval(timestampInt))
+
+        let sourceApp = sqlite3_column_text(statement, 5).map { String(cString: $0) }
+
+        // Column 6 is length(content) - blob size without fetching blob
+        let blobSize = Int(sqlite3_column_int64(statement, 6))
+
+        let isFavorite = sqlite3_column_int(statement, 7) == 1
+
+        return ClipboardItem(
+            id: id,
+            content: content,
+            contentType: contentType,
+            contentHash: contentHash,
+            timestamp: timestamp,
+            sourceApp: sourceApp,
+            blobContent: nil,
+            blobSize: blobSize,
+            isFavorite: isFavorite
+        )
+    }
+
+    /// Fetch blob content for an item by its content hash (for paste operations)
+    func fetchBlobContent(byHash hash: String) async throws -> Data? {
+        let sql = "SELECT content FROM items WHERE content_hash = ?;"
+
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(message: String(cString: sqlite3_errmsg(db)))
+        }
+
+        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        sqlite3_bind_text(statement, 1, (hash as NSString).utf8String, -1, SQLITE_TRANSIENT)
+
+        if sqlite3_step(statement) == SQLITE_ROW {
+            let blobSize = sqlite3_column_bytes(statement, 0)
+            if blobSize > 0, let blobPtr = sqlite3_column_blob(statement, 0) {
+                return Data(bytes: blobPtr, count: Int(blobSize))
+            }
+        }
+
+        return nil
     }
 }
 

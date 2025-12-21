@@ -255,8 +255,8 @@ final class StorageEngineTests: XCTestCase {
         // Update timestamp
         try await storage.updateTimestamp(forHash: hash)
 
-        // Fetch and verify all other fields are preserved
-        let items = try await storage.fetchItems(limit: nil, favoriteOnly: false)
+        // Fetch and verify all other fields are preserved (includeContent to check blob)
+        let items = try await storage.fetchItems(limit: nil, favoriteOnly: false, includeContent: true)
         XCTAssertEqual(items.count, 1)
         let updatedItem = items.first!
 

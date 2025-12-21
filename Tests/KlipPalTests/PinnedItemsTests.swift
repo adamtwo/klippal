@@ -40,7 +40,7 @@ final class PinnedItemsTests: XCTestCase {
         try await storage.save(item)
 
         // Load items into view model
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         XCTAssertEqual(viewModel.items.count, 1)
@@ -68,7 +68,7 @@ final class PinnedItemsTests: XCTestCase {
         )
         try await storage.save(item)
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         XCTAssertTrue(viewModel.items[0].isFavorite)
@@ -101,7 +101,7 @@ final class PinnedItemsTests: XCTestCase {
         try await storage.save(pinnedItem)
         try await storage.save(regularItem)
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Initially shows all items
@@ -132,7 +132,7 @@ final class PinnedItemsTests: XCTestCase {
         try await storage.save(pinnedItem)
         try await storage.save(regularItem)
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Switch to pinned only
@@ -168,7 +168,7 @@ final class PinnedItemsTests: XCTestCase {
         try await storage.save(pinned2)
         try await storage.save(regular)
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         XCTAssertEqual(viewModel.pinnedCount, 2)
@@ -209,7 +209,7 @@ final class PinnedItemsTests: XCTestCase {
         try await storage.save(recentRegular)
         try await storage.save(oldRegular)
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Search for "apple"
@@ -242,7 +242,7 @@ final class PinnedItemsTests: XCTestCase {
         try await storage.save(pinnedItem)
         try await storage.save(regularItem)
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Enable pinned only mode
@@ -294,7 +294,7 @@ final class PinnedItemsTests: XCTestCase {
         try await storage.save(recentRegularItem)
         try await storage.save(oldRegularItem)
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Items should be ordered by timestamp, not favorites first
@@ -348,7 +348,7 @@ final class PinnedItemsTests: XCTestCase {
 
         try await storage.save(item)
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Enable pinned only mode - should be empty

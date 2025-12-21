@@ -28,7 +28,7 @@ final class SearchUIIntegrationTests: XCTestCase {
 
         // Create view model and panel
         viewModel = OverlayViewModel(storage: storage)
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
 
         // Wait for items to load
         try await Task.sleep(nanoseconds: 300_000_000)

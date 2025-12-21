@@ -306,6 +306,8 @@ struct ClipboardItemRowView: View {
         switch item.contentType {
         case .text:
             return "doc.text"
+        case .richText:
+            return "doc.richtext"
         case .url:
             if item.isCodeRepository {
                 return "chevron.left.forwardslash.chevron.right"
@@ -326,6 +328,7 @@ struct ClipboardItemRowView: View {
     private var iconColor: Color {
         switch item.contentType {
         case .text: return .primary
+        case .richText: return .indigo
         case .url: return .purple
         case .image: return .blue
         case .fileURL:
@@ -349,6 +352,7 @@ struct ClipboardItemRowView: View {
     private var iconBackgroundColor: Color {
         switch item.contentType {
         case .text: return Color.secondary.opacity(0.1)
+        case .richText: return Color.indigo.opacity(0.1)
         case .url: return Color.purple.opacity(0.1)
         case .image: return Color.blue.opacity(0.1)
         case .fileURL:

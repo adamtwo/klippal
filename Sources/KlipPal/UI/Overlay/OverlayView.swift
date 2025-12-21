@@ -172,11 +172,9 @@ struct OverlayView: View {
                                     onDelete: { viewModel.deleteItem(item) },
                                     onToggleFavorite: { viewModel.toggleFavorite(item) },
                                     onSingleClick: {
-                                        // Single-click: just select (no copy)
                                         viewModel.selectedIndex = index
                                     },
                                     onDoubleClick: {
-                                        // Double-click: copy, close, and paste
                                         viewModel.selectedIndex = index
                                         pasteItem(item)
                                     },

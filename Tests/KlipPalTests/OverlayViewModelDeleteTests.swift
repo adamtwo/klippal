@@ -44,7 +44,7 @@ final class OverlayViewModelDeleteTests: XCTestCase {
         try await storage.save(item2)
 
         // Load items into view model
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
 
         // Wait for async load
         try await Task.sleep(nanoseconds: 100_000_000) // 100ms
@@ -83,7 +83,7 @@ final class OverlayViewModelDeleteTests: XCTestCase {
             try await storage.save(item)
         }
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Set selected index to last item
@@ -123,7 +123,7 @@ final class OverlayViewModelDeleteTests: XCTestCase {
         try await storage.save(item2)
         try await storage.save(item3)
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Search for "Apple"
@@ -154,7 +154,7 @@ final class OverlayViewModelDeleteTests: XCTestCase {
 
         try await storage.save(item)
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         viewModel.selectedIndex = 0

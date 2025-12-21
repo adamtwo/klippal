@@ -42,7 +42,7 @@ final class OverlayWindowKeyHandlingTests: XCTestCase {
     @MainActor
     func testDirectSendEventCallWorks() async throws {
         let viewModel = OverlayViewModel(storage: storage)
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 300_000_000)
 
         let panel = OverlayPanel(
@@ -86,7 +86,7 @@ final class OverlayWindowKeyHandlingTests: XCTestCase {
     @MainActor
     func testSendEventDownArrowChangesSelection() async throws {
         let viewModel = OverlayViewModel(storage: storage)
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 300_000_000)
 
         guard !viewModel.filteredItems.isEmpty else {
@@ -147,7 +147,7 @@ final class OverlayWindowKeyHandlingTests: XCTestCase {
     @MainActor
     func testSendEventUpArrowChangesSelection() async throws {
         let viewModel = OverlayViewModel(storage: storage)
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 300_000_000)
 
         guard !viewModel.filteredItems.isEmpty else {
@@ -248,7 +248,7 @@ final class OverlayWindowKeyHandlingTests: XCTestCase {
     @MainActor
     func testSendEventReturnTriggersPaste() async throws {
         let viewModel = OverlayViewModel(storage: storage)
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 300_000_000)
 
         guard !viewModel.filteredItems.isEmpty else {

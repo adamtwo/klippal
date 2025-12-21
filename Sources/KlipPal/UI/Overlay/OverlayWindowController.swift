@@ -19,7 +19,7 @@ class OverlayWindowController: NSWindowController {
     private static let maxWidth: CGFloat = 1200
     private static let maxHeight: CGFloat = 800
 
-    init() {
+    init(preloadedItems: [ClipboardItem] = []) {
         // Load saved size or use defaults
         let savedWidth = UserDefaults.standard.double(forKey: Self.windowWidthKey)
         let savedHeight = UserDefaults.standard.double(forKey: Self.windowHeightKey)
@@ -56,9 +56,9 @@ class OverlayWindowController: NSWindowController {
         // Set delegate to track window size changes
         panel.delegate = self
 
-        // Create view model and set content view to SwiftUI
+        // Create view model with pre-loaded items and set content view to SwiftUI
         Task { @MainActor in
-            self.viewModel = OverlayViewModel()
+            self.viewModel = OverlayViewModel(preloadedItems: preloadedItems)
 
             // Connect panel to view model for keyboard navigation
             panel.viewModel = self.viewModel

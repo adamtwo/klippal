@@ -6,7 +6,11 @@ protocol StorageEngineProtocol: Actor {
     func save(_ item: ClipboardItem) async throws
 
     /// Fetch all items, optionally filtered and limited
-    func fetchItems(limit: Int?, favoriteOnly: Bool) async throws -> [ClipboardItem]
+    /// - Parameters:
+    ///   - limit: Maximum number of items to return
+    ///   - favoriteOnly: If true, only return favorited items
+    ///   - includeContent: If true, include blob content (for paste operations); false for list display
+    func fetchItems(limit: Int?, favoriteOnly: Bool, includeContent: Bool) async throws -> [ClipboardItem]
 
     /// Fetch a specific item by ID
     func fetchItem(byId id: UUID) async throws -> ClipboardItem?

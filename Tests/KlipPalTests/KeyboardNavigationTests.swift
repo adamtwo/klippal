@@ -30,7 +30,7 @@ final class KeyboardNavigationTests: XCTestCase {
         viewModel = await OverlayViewModel(storage: storage)
 
         // Load items into view model
-        await viewModel.loadItems()
+        await viewModel.loadItemsFromStorage()
 
         // Wait for items to load
         try await Task.sleep(nanoseconds: 100_000_000) // 100ms

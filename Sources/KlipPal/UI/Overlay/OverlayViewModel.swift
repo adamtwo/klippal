@@ -35,20 +35,40 @@ class OverlayViewModel: ObservableObject {
     /// Callback invoked to close the window
     var onCloseWindow: (() -> Void)?
 
-    init(storage: SQLiteStorageEngine? = nil) {
+    init(storage: SQLiteStorageEngine? = nil, preloadedItems: [ClipboardItem] = []) {
         // Get shared storage from AppDelegate
         self.storage = storage ?? AppDelegate.shared.storage!
         self.pasteManager = PasteManager()
 
-        // Observe clipboard item additions
+        // Use pre-loaded items if provided, otherwise load from storage
+        if !preloadedItems.isEmpty {
+            self.items = preloadedItems
+            self.filteredItems = preloadedItems
+            // Load thumbnails for pre-loaded items
+            Task { @MainActor [weak self] in
+                self?.loadThumbnails(for: preloadedItems)
+            }
+        } else {
+            // Fallback: load from storage if no pre-loaded items
+            Task { @MainActor [weak self] in
+                self?.loadItemsFromStorage()
+            }
+        }
+
+        // Observe clipboard item additions - add incrementally instead of reloading
         notificationObserver = NotificationCenter.default.addObserver(
             forName: .clipboardItemAdded,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self] notification in
             guard let self = self else { return }
             Task { @MainActor [weak self] in
-                self?.loadItems()
+                if let newItem = notification.object as? ClipboardItem {
+                    self?.addItemIncrementally(newItem)
+                } else {
+                    // Fallback to full reload if item not in notification
+                    self?.loadItemsFromStorage()
+                }
             }
         }
     }
@@ -59,22 +79,49 @@ class OverlayViewModel: ObservableObject {
         }
     }
 
+    /// Called when the overlay window is shown - uses cached items, no database fetch
     func loadItems() {
+        // Re-apply current filters (search query and/or pinned-only mode)
+        applyFilters()
+        // Always reset selection to first item when window appears
+        selectedIndex = 0
+        // Trigger scroll to top
+        scrollToTopTrigger += 1
+    }
+
+    /// Loads items from storage - called on init and when full refresh is needed
+    func loadItemsFromStorage() {
         Task {
             do {
                 let limit = PreferencesManager.shared.historyLimit
                 items = try await storage.fetchItems(limit: limit, favoriteOnly: false)
-                // Re-apply current filters (search query and/or pinned-only mode)
+                // Re-apply current filters
                 applyFilters()
-                // Always reset selection to first item when window appears
-                selectedIndex = 0
-                // Trigger scroll to top
-                scrollToTopTrigger += 1
                 // Load thumbnails for image items
                 loadThumbnails(for: items)
             } catch {
                 print("Failed to load items: \(error)")
             }
+        }
+    }
+
+    /// Adds a new item to the front of the list without reloading from storage
+    private func addItemIncrementally(_ newItem: ClipboardItem) {
+        // Insert at the beginning (most recent)
+        items.insert(newItem, at: 0)
+
+        // Enforce history limit
+        let limit = PreferencesManager.shared.historyLimit
+        if items.count > limit {
+            items = Array(items.prefix(limit))
+        }
+
+        // Re-apply filters to update filteredItems
+        applyFilters()
+
+        // Load thumbnail if it's an image
+        if newItem.contentType == .image {
+            loadThumbnails(for: [newItem])
         }
     }
 
@@ -84,10 +131,18 @@ class OverlayViewModel: ObservableObject {
             // Skip if already cached
             if thumbnailCache[item.contentHash] != nil { continue }
 
-            // Generate thumbnail from blob content
-            if let blobContent = item.blobContent {
-                if let thumbnail = ThumbnailGenerator.generateThumbnail(from: blobContent, maxSize: 80) {
-                    thumbnailCache[item.contentHash] = thumbnail
+            // Generate thumbnail from blob content (fetch lazily if needed)
+            Task {
+                var blobContent = item.blobContent
+                if blobContent == nil {
+                    blobContent = try? await storage.fetchBlobContent(byHash: item.contentHash)
+                }
+                if let blobContent = blobContent {
+                    if let thumbnail = ThumbnailGenerator.generateThumbnail(from: blobContent, maxSize: 80) {
+                        await MainActor.run {
+                            thumbnailCache[item.contentHash] = thumbnail
+                        }
+                    }
                 }
             }
         }
@@ -108,8 +163,13 @@ class OverlayViewModel: ObservableObject {
             return cached
         }
 
-        // Load from blob content
-        guard let blobContent = item.blobContent else { return nil }
+        // Load from blob content (fetch lazily if needed)
+        var blobContent = item.blobContent
+        if blobContent == nil {
+            blobContent = try? await storage.fetchBlobContent(byHash: item.contentHash)
+        }
+
+        guard let blobContent = blobContent else { return nil }
 
         if let image = NSImage(data: blobContent) {
             fullImageCache[item.contentHash] = image
@@ -189,14 +249,12 @@ class OverlayViewModel: ObservableObject {
     func selectNext() {
         guard !filteredItems.isEmpty else { return }
         selectedIndex = min(selectedIndex + 1, filteredItems.count - 1)
-        print("Selected index: \(selectedIndex)")
         triggerScrollToSelection()
     }
 
     func selectPrevious() {
         guard !filteredItems.isEmpty else { return }
         selectedIndex = max(selectedIndex - 1, 0)
-        print("Selected index: \(selectedIndex)")
         triggerScrollToSelection()
     }
 
@@ -217,24 +275,68 @@ class OverlayViewModel: ObservableObject {
         guard selectedIndex < filteredItems.count else { return }
         let item = filteredItems[selectedIndex]
 
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(item.content, forType: .string)
-        print("Copied to clipboard: \(item.content.prefix(50))...")
-
-        // Update timestamp to bring item to top of history
         Task {
+            // Fetch blob content if not already loaded
+            var blobContent = item.blobContent
+            if blobContent == nil {
+                blobContent = try? await storage.fetchBlobContent(byHash: item.contentHash)
+            }
+
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+
+            switch item.contentType {
+            case .image:
+                if let blobContent = blobContent, let image = NSImage(data: blobContent) {
+                    pasteboard.writeObjects([image])
+                    print("Copied image to clipboard")
+                }
+
+            case .fileURL:
+                if let url = URL(string: item.content), url.isFileURL {
+                    pasteboard.writeObjects([url as NSURL])
+                    print("Copied file URL to clipboard: \(url.path)")
+                }
+
+            case .richText:
+                if let blobContent = blobContent {
+                    if let attributed = NSAttributedString(rtf: blobContent, documentAttributes: nil) {
+                        pasteboard.setData(blobContent, forType: .rtf)
+                        pasteboard.setString(attributed.string, forType: .string)
+                        print("Copied RTF to clipboard")
+                    } else if let attributed = NSAttributedString(html: blobContent, documentAttributes: nil) {
+                        pasteboard.setData(blobContent, forType: .html)
+                        pasteboard.setString(attributed.string, forType: .string)
+                        print("Copied HTML to clipboard")
+                    } else {
+                        pasteboard.setString(item.content, forType: .string)
+                    }
+                } else {
+                    pasteboard.setString(item.content, forType: .string)
+                }
+
+            case .text, .url:
+                // Use full text from blob if available
+                if let blobContent = blobContent,
+                   let fullText = String(data: blobContent, encoding: .utf8) {
+                    pasteboard.setString(fullText, forType: .string)
+                    print("Copied full text to clipboard: \(fullText.prefix(50))...")
+                } else {
+                    pasteboard.setString(item.content, forType: .string)
+                    print("Copied summary to clipboard: \(item.content.prefix(50))...")
+                }
+            }
+
+            // Update timestamp to bring item to top of history
             do {
                 try await storage.updateTimestamp(forHash: item.contentHash)
                 print("Updated timestamp for copied item")
             } catch {
                 print("Failed to update timestamp: \(error)")
             }
-        }
 
-        // Show brief visual feedback
-        showCopiedFeedback = true
-        Task {
+            // Show brief visual feedback
+            showCopiedFeedback = true
             try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 seconds
             showCopiedFeedback = false
         }

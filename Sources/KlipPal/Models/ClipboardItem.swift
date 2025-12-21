@@ -20,8 +20,11 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
     /// Application that was active when copied (optional)
     let sourceApp: String?
 
-    /// Binary content for images stored directly in database (optional)
+    /// Binary content for images stored directly in database (optional, lazily loaded)
     var blobContent: Data?
+
+    /// Size of blob content in bytes (used when blobContent is not loaded)
+    var blobSize: Int?
 
     /// Whether this item is pinned/favorited
     var isFavorite: Bool
@@ -34,6 +37,7 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
         timestamp: Date = Date(),
         sourceApp: String? = nil,
         blobContent: Data? = nil,
+        blobSize: Int? = nil,
         isFavorite: Bool = false
     ) {
         self.id = id
@@ -43,6 +47,7 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
         self.timestamp = timestamp
         self.sourceApp = sourceApp
         self.blobContent = blobContent
+        self.blobSize = blobSize ?? blobContent?.count
         self.isFavorite = isFavorite
     }
 
@@ -52,7 +57,7 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
     /// Preview text (truncated for display)
     var preview: String {
         switch contentType {
-        case .text:
+        case .text, .richText:
             let cleaned = content.replacingOccurrences(of: "\n", with: " ")
             let truncated = String(cleaned.prefix(Self.previewLimit))
             return cleaned.count > Self.previewLimit ? truncated + "…" : truncated
@@ -71,29 +76,81 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
     /// Whether the content is truncated in the preview (based on blob size)
     var isTruncated: Bool {
         switch contentType {
-        case .text, .url:
-            let fullSize = blobContent?.count ?? content.count
+        case .text, .url, .richText:
+            let fullSize = blobSize ?? blobContent?.count ?? content.count
             return fullSize > Self.previewLimit
         case .image, .fileURL:
             return false
         }
     }
 
-    /// Character count of the full content (based on blob size for text)
+    /// Content size (blob byte count for text types, used as approximate indicator)
     var characterCount: Int {
-        if let blobContent = blobContent, contentType == .text || contentType == .url {
-            // For text, blob is UTF-8 encoded - use blob size as approximate char count
-            return blobContent.count
+        if contentType == .text || contentType == .url || contentType == .richText {
+            // Use blobSize if available (from lazy load), otherwise blobContent.count, fallback to content.count
+            return blobSize ?? blobContent?.count ?? content.count
         }
         return content.count
     }
 
+    /// Extract plain text from RTF or HTML data (full parsing, use sparingly)
+    private func extractPlainTextFromRichContent(_ data: Data) -> String {
+        // Try RTF first
+        if let attributed = NSAttributedString(rtf: data, documentAttributes: nil) {
+            return attributed.string
+        }
+
+        // Try HTML with NSAttributedString
+        if let attributed = try? NSAttributedString(
+            data: data,
+            options: [.documentType: NSAttributedString.DocumentType.html,
+                      .characterEncoding: String.Encoding.utf8.rawValue],
+            documentAttributes: nil
+        ) {
+            return attributed.string
+        }
+
+        // Fallback: strip HTML tags manually
+        if let htmlString = String(data: data, encoding: .utf8) {
+            return htmlString.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+                .replacingOccurrences(of: "&nbsp;", with: " ")
+                .replacingOccurrences(of: "&amp;", with: "&")
+                .replacingOccurrences(of: "&lt;", with: "<")
+                .replacingOccurrences(of: "&gt;", with: ">")
+                .replacingOccurrences(of: "&quot;", with: "\"")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return content
+    }
+
     /// Full text content from blob (for preview popover)
     var fullContent: String {
-        if let blobContent = blobContent, contentType == .text || contentType == .url {
-            return String(data: blobContent, encoding: .utf8) ?? content
+        if let blobContent = blobContent {
+            switch contentType {
+            case .text, .url:
+                return String(data: blobContent, encoding: .utf8) ?? content
+            case .richText:
+                return extractPlainTextFromRichContent(blobContent)
+            case .image, .fileURL:
+                return content
+            }
         }
         return content
+    }
+
+    /// Rich text content as attributed string (for rich text items)
+    var attributedContent: NSAttributedString? {
+        guard contentType == .richText, let blobContent = blobContent else { return nil }
+        // Try RTF first
+        if let attributed = NSAttributedString(rtf: blobContent, documentAttributes: nil) {
+            return attributed
+        }
+        // Try HTML
+        if let attributed = NSAttributedString(html: blobContent, documentAttributes: nil) {
+            return attributed
+        }
+        return nil
     }
 
     /// Formatted character count string (e.g., "1.2K chars" or "150 chars")

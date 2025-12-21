@@ -73,10 +73,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
 
-                // Print current item count
+                // Pre-fetch items before creating overlay (so they're immediately available)
+                var preloadedItems: [ClipboardItem] = []
                 if let storage = storage {
-                    let count = try await storage.count()
-                    print("Current clipboard history: \(count) items")
+                    let limit = PreferencesManager.shared.historyLimit
+                    preloadedItems = try await storage.fetchItems(limit: limit, favoriteOnly: false)
+                    print("Current clipboard history: \(preloadedItems.count) items")
+                }
+
+                // Pre-create overlay window with pre-loaded items
+                await MainActor.run {
+                    statusBarController?.preloadOverlay(with: preloadedItems)
                 }
 
                 print("KlipPal ready!")

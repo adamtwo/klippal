@@ -36,7 +36,7 @@ final class BlobContentStorageTests: XCTestCase {
         try await storage.save(item)
 
         // Fetch items
-        let items = try await storage.fetchItems(limit: nil, favoriteOnly: false)
+        let items = try await storage.fetchItems(limit: nil, favoriteOnly: false, includeContent: true)
 
         XCTAssertEqual(items.count, 1)
         XCTAssertEqual(items.first?.contentType, .image)
@@ -54,7 +54,7 @@ final class BlobContentStorageTests: XCTestCase {
 
         try await storage.save(item)
 
-        let items = try await storage.fetchItems(limit: nil, favoriteOnly: false)
+        let items = try await storage.fetchItems(limit: nil, favoriteOnly: false, includeContent: true)
 
         XCTAssertEqual(items.count, 1)
         XCTAssertNil(items.first?.blobContent, "Text items should have nil blob content")
@@ -78,7 +78,7 @@ final class BlobContentStorageTests: XCTestCase {
         try await storage.save(item)
 
         // Fetch and verify
-        let items = try await storage.fetchItems(limit: nil, favoriteOnly: false)
+        let items = try await storage.fetchItems(limit: nil, favoriteOnly: false, includeContent: true)
         XCTAssertEqual(items.count, 1)
         XCTAssertTrue(items.first!.isFavorite)
         XCTAssertEqual(items.first?.blobContent, imageData, "Blob content should be preserved after update")
@@ -97,7 +97,7 @@ final class BlobContentStorageTests: XCTestCase {
 
         try await storage.save(item)
 
-        let items = try await storage.fetchItems(limit: nil, favoriteOnly: false)
+        let items = try await storage.fetchItems(limit: nil, favoriteOnly: false, includeContent: true)
         XCTAssertEqual(items.count, 1)
         XCTAssertEqual(items.first?.blobContent?.count, imageData.count)
     }
@@ -162,7 +162,7 @@ final class BlobContentStorageTests: XCTestCase {
         try await storage.save(item)
 
         // Fetch and recreate image
-        let items = try await storage.fetchItems(limit: nil, favoriteOnly: false)
+        let items = try await storage.fetchItems(limit: nil, favoriteOnly: false, includeContent: true)
         guard let blobContent = items.first?.blobContent else {
             XCTFail("No blob content returned")
             return

@@ -460,14 +460,14 @@ final class ViewModelSearchQueryTests: XCTestCase {
         let item = ClipboardItem(content: "test content", contentType: .text, contentHash: "persist1")
         try await storage.save(item)
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Perform search
         viewModel.search(query: "test")
 
         // Reload items - search should be re-applied
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Filtered items should still reflect the search
@@ -481,15 +481,15 @@ final class ViewModelSearchQueryTests: XCTestCase {
             try await storage.save(item)
         }
 
-        viewModel.loadItems()
+        // First load from storage
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Change selection
         viewModel.selectedIndex = 3
 
-        // Reload
+        // Call loadItems() (simulates window re-opening) - should reset to 0
         viewModel.loadItems()
-        try await Task.sleep(nanoseconds: 100_000_000)
 
         XCTAssertEqual(viewModel.selectedIndex, 0, "Selection should reset to 0 on load")
     }
