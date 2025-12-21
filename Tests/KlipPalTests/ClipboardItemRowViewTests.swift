@@ -110,6 +110,191 @@ final class ClipboardItemRowViewTests: XCTestCase {
             "Preview should truncate to 1000 chars plus ellipsis")
     }
 
+    // MARK: - Character Count Display Tests (based on blob size)
+
+    func testRowWithMoreThan100CharsDisplaysCharacterCount() {
+        // Create item with 150 chars in blob, but only 100 in content column
+        let fullText = String(repeating: "a", count: 150)
+        let truncatedContent = String(fullText.prefix(100))
+        let blobData = fullText.data(using: .utf8)!
+
+        let item = ClipboardItem(
+            content: truncatedContent,
+            contentType: .text,
+            contentHash: "hash_long",
+            blobContent: blobData
+        )
+
+        // isTruncated should be based on blob size (150) vs preview limit (100)
+        XCTAssertTrue(item.isTruncated, "Item with 150 chars in blob should be truncated")
+        XCTAssertEqual(item.characterCount, 150, "Character count should be based on blob size")
+        XCTAssertEqual(item.formattedCharacterCount, "150 chars")
+    }
+
+    func testRowWithExactly100CharsDoesNotDisplayCharacterCount() {
+        let exactText = String(repeating: "b", count: 100)
+        let blobData = exactText.data(using: .utf8)!
+
+        let item = ClipboardItem(
+            content: exactText,
+            contentType: .text,
+            contentHash: "hash_exact",
+            blobContent: blobData
+        )
+
+        // 100 chars is not greater than 100, so not truncated
+        XCTAssertFalse(item.isTruncated, "Item with exactly 100 chars should not be truncated")
+    }
+
+    func testRowWith101CharsDisplaysCharacterCount() {
+        let text101 = String(repeating: "c", count: 101)
+        let truncatedContent = String(text101.prefix(100))
+        let blobData = text101.data(using: .utf8)!
+
+        let item = ClipboardItem(
+            content: truncatedContent,
+            contentType: .text,
+            contentHash: "hash_101",
+            blobContent: blobData
+        )
+
+        XCTAssertTrue(item.isTruncated, "Item with 101 chars in blob should be truncated")
+        XCTAssertEqual(item.characterCount, 101)
+    }
+
+    func testCharacterCountUsesKFormatForLargeNumbers() {
+        let largeText = String(repeating: "d", count: 1500)
+        let blobData = largeText.data(using: .utf8)!
+
+        let item = ClipboardItem(
+            content: String(largeText.prefix(100)),
+            contentType: .text,
+            contentHash: "hash_large",
+            blobContent: blobData
+        )
+
+        XCTAssertEqual(item.characterCount, 1500)
+        XCTAssertEqual(item.formattedCharacterCount, "1.5K chars")
+    }
+
+    // MARK: - Popover Full Content Tests (from blob)
+
+    func testPopoverShowsFullContentFromBlob() {
+        let fullText = "This is the full content that should appear in the popover preview"
+        let truncatedContent = String(fullText.prefix(30))
+        let blobData = fullText.data(using: .utf8)!
+
+        let item = ClipboardItem(
+            content: truncatedContent,
+            contentType: .text,
+            contentHash: "hash_popover",
+            blobContent: blobData
+        )
+
+        // fullContent should return the complete text from blob
+        XCTAssertEqual(item.fullContent, fullText)
+        XCTAssertNotEqual(item.fullContent, item.content, "fullContent should differ from truncated content")
+    }
+
+    func testPopoverContentTruncatesAt1000CharsFor2000CharBlob() {
+        let veryLongText = String(repeating: "e", count: 2000)
+        let blobData = veryLongText.data(using: .utf8)!
+        let maxPreviewChars = 1000
+
+        let item = ClipboardItem(
+            content: String(veryLongText.prefix(100)),
+            contentType: .text,
+            contentHash: "hash_2000",
+            blobContent: blobData
+        )
+
+        // fullContent returns the full 2000 chars
+        XCTAssertEqual(item.fullContent.count, 2000)
+
+        // TextPreviewPopover should truncate to 1000 chars
+        let previewText: String
+        if item.fullContent.count > maxPreviewChars {
+            previewText = String(item.fullContent.prefix(maxPreviewChars)) + "..."
+        } else {
+            previewText = item.fullContent
+        }
+
+        XCTAssertEqual(previewText.count, 1003, "Popover should show 1000 chars + '...'")
+        XCTAssertTrue(previewText.hasSuffix("..."), "Truncated preview should end with ellipsis")
+    }
+
+    func testPopoverContentShowsFullTextUnder1000Chars() {
+        let mediumText = String(repeating: "f", count: 500)
+        let blobData = mediumText.data(using: .utf8)!
+        let maxPreviewChars = 1000
+
+        let item = ClipboardItem(
+            content: String(mediumText.prefix(100)),
+            contentType: .text,
+            contentHash: "hash_500",
+            blobContent: blobData
+        )
+
+        // Simulate TextPreviewPopover logic
+        let previewText: String
+        if item.fullContent.count > maxPreviewChars {
+            previewText = String(item.fullContent.prefix(maxPreviewChars)) + "..."
+        } else {
+            previewText = item.fullContent
+        }
+
+        XCTAssertEqual(previewText.count, 500, "Popover should show full 500 chars without truncation")
+        XCTAssertFalse(previewText.hasSuffix("..."), "Non-truncated preview should not have ellipsis")
+    }
+
+    func testPopoverContentExactly1000CharsNotTruncated() {
+        let exact1000 = String(repeating: "g", count: 1000)
+        let blobData = exact1000.data(using: .utf8)!
+        let maxPreviewChars = 1000
+
+        let item = ClipboardItem(
+            content: String(exact1000.prefix(100)),
+            contentType: .text,
+            contentHash: "hash_1000",
+            blobContent: blobData
+        )
+
+        // Simulate TextPreviewPopover logic
+        let previewText: String
+        if item.fullContent.count > maxPreviewChars {
+            previewText = String(item.fullContent.prefix(maxPreviewChars)) + "..."
+        } else {
+            previewText = item.fullContent
+        }
+
+        XCTAssertEqual(previewText.count, 1000, "Exactly 1000 chars should not be truncated")
+        XCTAssertFalse(previewText.hasSuffix("..."))
+    }
+
+    func testPopoverContent1001CharsTruncated() {
+        let text1001 = String(repeating: "h", count: 1001)
+        let blobData = text1001.data(using: .utf8)!
+        let maxPreviewChars = 1000
+
+        let item = ClipboardItem(
+            content: String(text1001.prefix(100)),
+            contentType: .text,
+            contentHash: "hash_1001",
+            blobContent: blobData
+        )
+
+        // Simulate TextPreviewPopover logic
+        let previewText: String
+        if item.fullContent.count > maxPreviewChars {
+            previewText = String(item.fullContent.prefix(maxPreviewChars)) + "..."
+        } else {
+            previewText = item.fullContent
+        }
+
+        XCTAssertEqual(previewText.count, 1003, "1001 chars should be truncated to 1000 + '...'")
+        XCTAssertTrue(previewText.hasSuffix("..."))
+    }
+
     // MARK: - URLPreviewData Tests
 
     func testURLPreviewDataInitialization() {
@@ -183,6 +368,103 @@ final class ClipboardItemRowViewTests: XCTestCase {
 
         XCTAssertEqual(scaled.width, maxPreviewSize)
         XCTAssertEqual(scaled.height, maxPreviewSize)
+    }
+
+    // MARK: - Popover Lazy Loading Tests
+
+    func testPopoverLoadsFullTextFromStorageWhenBlobIsNil() async throws {
+        // Create a temporary database
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempDBPath = tempDir.appendingPathComponent("test_popover_\(UUID().uuidString).db").path
+        let storage = try await SQLiteStorageEngine(dbPath: tempDBPath)
+
+        defer {
+            try? FileManager.default.removeItem(atPath: tempDBPath)
+        }
+
+        // Create item with 500 char content in blob
+        let fullText = String(repeating: "x", count: 500)
+        let truncatedContent = String(fullText.prefix(100))
+        let blobData = fullText.data(using: .utf8)!
+
+        let item = ClipboardItem(
+            content: truncatedContent,
+            contentType: .text,
+            contentHash: "popover_test_hash",
+            blobContent: blobData
+        )
+
+        // Save to storage
+        try await storage.save(item)
+
+        // Create item WITHOUT blob (simulating lazy loading)
+        let lazyItem = ClipboardItem(
+            content: truncatedContent,
+            contentType: .text,
+            contentHash: "popover_test_hash",
+            blobContent: nil // No blob loaded
+        )
+
+        // Verify fullContent returns only summary when blob is nil
+        XCTAssertEqual(lazyItem.fullContent, truncatedContent,
+            "Without blob, fullContent should return summary (100 chars)")
+
+        // Fetch blob from storage
+        let fetchedBlob = try await storage.fetchBlobContent(byHash: lazyItem.contentHash)
+        XCTAssertNotNil(fetchedBlob, "Should be able to fetch blob from storage")
+
+        // Verify fetched blob contains full content
+        let fetchedText = String(data: fetchedBlob!, encoding: .utf8)!
+        XCTAssertEqual(fetchedText.count, 500, "Fetched blob should contain full 500 chars")
+        XCTAssertEqual(fetchedText, fullText, "Fetched text should match original")
+    }
+
+    func testPopoverShowsUpTo1000CharsFromFetchedBlob() async throws {
+        // Create a temporary database
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempDBPath = tempDir.appendingPathComponent("test_popover_1000_\(UUID().uuidString).db").path
+        let storage = try await SQLiteStorageEngine(dbPath: tempDBPath)
+
+        defer {
+            try? FileManager.default.removeItem(atPath: tempDBPath)
+        }
+
+        // Create item with 2000 char content in blob
+        let fullText = String(repeating: "y", count: 2000)
+        let truncatedContent = String(fullText.prefix(100))
+        let blobData = fullText.data(using: .utf8)!
+
+        let item = ClipboardItem(
+            content: truncatedContent,
+            contentType: .text,
+            contentHash: "popover_1000_test_hash",
+            blobContent: blobData
+        )
+
+        // Save to storage
+        try await storage.save(item)
+
+        // Fetch blob from storage (simulating what loadFullText does)
+        let fetchedBlob = try await storage.fetchBlobContent(byHash: item.contentHash)
+        XCTAssertNotNil(fetchedBlob)
+
+        let fetchedText = String(data: fetchedBlob!, encoding: .utf8)!
+
+        // Verify fetched text is full 2000 chars
+        XCTAssertEqual(fetchedText.count, 2000, "Fetched blob should contain full 2000 chars")
+
+        // Simulate TextPreviewPopover truncation
+        let maxPreviewChars = 1000
+        let previewText: String
+        if fetchedText.count > maxPreviewChars {
+            previewText = String(fetchedText.prefix(maxPreviewChars)) + "..."
+        } else {
+            previewText = fetchedText
+        }
+
+        // The popover should show 1000 chars (not 100 from summary!)
+        XCTAssertEqual(previewText.count, 1003, "Popover should show 1000 chars + '...'")
+        XCTAssertTrue(previewText.count > 100, "Popover must show more than summary's 100 chars")
     }
 
     // MARK: - Helper Methods

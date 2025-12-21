@@ -86,6 +86,8 @@ struct PreferencesView: View {
                 print("✅ Clipboard history cleared")
                 await MainActor.run {
                     itemCount = 0
+                    // Notify observers that history was cleared
+                    NotificationCenter.default.post(name: .clipboardHistoryCleared, object: nil)
                 }
             }
         }
@@ -117,6 +119,20 @@ struct GeneralSettingsView: View {
 
             Section {
                 KeyboardShortcutPicker(preferences: preferences)
+            }
+
+            Section {
+                Picker("Paste as plain text:", selection: $preferences.plainTextPasteModifier) {
+                    ForEach(PlainTextPasteModifier.allCases) { modifier in
+                        Text(modifier.displayName).tag(modifier)
+                    }
+                }
+                .pickerStyle(.menu)
+                .help("Hold this key while pressing Enter or double-clicking to paste as plain text")
+
+                Text("Hold \(preferences.plainTextPasteModifier.displayName) + Enter to paste without formatting")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
         }
         .formStyle(.grouped)

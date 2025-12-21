@@ -167,7 +167,7 @@ final class OverlayKeyEventTests: XCTestCase {
     @MainActor
     func testKeyEventToViewModelIntegration() async throws {
         let viewModel = OverlayViewModel(storage: storage)
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
 
         // Wait for items to load
         try await Task.sleep(nanoseconds: 200_000_000) // 200ms
@@ -221,7 +221,7 @@ final class OverlayKeyEventTests: XCTestCase {
     @MainActor
     func testReturnTriggersPaste() async throws {
         let viewModel = OverlayViewModel(storage: storage)
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
 
         // Wait for items to load
         try await Task.sleep(nanoseconds: 200_000_000) // 200ms
@@ -248,7 +248,7 @@ final class OverlayKeyEventTests: XCTestCase {
     @MainActor
     func testNavigationAtTopBoundary() async throws {
         let viewModel = OverlayViewModel(storage: storage)
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
 
         try await Task.sleep(nanoseconds: 200_000_000) // 200ms
 
@@ -267,7 +267,7 @@ final class OverlayKeyEventTests: XCTestCase {
     @MainActor
     func testNavigationAtBottomBoundary() async throws {
         let viewModel = OverlayViewModel(storage: storage)
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
 
         try await Task.sleep(nanoseconds: 200_000_000) // 200ms
 
@@ -294,7 +294,7 @@ final class OverlayKeyEventTests: XCTestCase {
     @MainActor
     func testRapidDownArrowPresses() async throws {
         let viewModel = OverlayViewModel(storage: storage)
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
 
         try await Task.sleep(nanoseconds: 200_000_000) // 200ms
 
@@ -314,7 +314,7 @@ final class OverlayKeyEventTests: XCTestCase {
     @MainActor
     func testRapidUpArrowPresses() async throws {
         let viewModel = OverlayViewModel(storage: storage)
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
 
         try await Task.sleep(nanoseconds: 200_000_000) // 200ms
 

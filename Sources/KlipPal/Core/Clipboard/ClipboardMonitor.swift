@@ -3,6 +3,7 @@ import Foundation
 
 extension Notification.Name {
     static let clipboardItemAdded = Notification.Name("clipboardItemAdded")
+    static let clipboardHistoryCleared = Notification.Name("clipboardHistoryCleared")
 }
 
 /// Monitors the system clipboard for changes
@@ -13,16 +14,26 @@ class ClipboardMonitor: ObservableObject {
     private var timer: Timer?
     private let storage: StorageEngineProtocol
     private let deduplicator: ClipboardDeduplicator
-    private let blobStorage: BlobStorageManager?
     private let excludedAppsManager: ExcludedAppsManager?
 
     /// Polling interval in seconds (0.5s = 500ms)
     private let pollingInterval: TimeInterval = 0.5
 
-    init(storage: StorageEngineProtocol, blobStorage: BlobStorageManager? = nil, excludedAppsManager: ExcludedAppsManager? = nil) {
+    /// Maximum image size to store (10MB)
+    private let maxImageSize: Int = 10 * 1024 * 1024
+
+    /// Flag to temporarily skip monitoring (set during paste operations)
+    private var skipNextChange: Bool = false
+
+    /// Temporarily skip monitoring the next clipboard change
+    /// Used when we're restoring content to clipboard for pasting
+    func skipNextClipboardChange() {
+        skipNextChange = true
+    }
+
+    init(storage: StorageEngineProtocol, excludedAppsManager: ExcludedAppsManager? = nil) {
         self.storage = storage
         self.deduplicator = ClipboardDeduplicator(storage: storage)
-        self.blobStorage = blobStorage
         self.excludedAppsManager = excludedAppsManager
         self.changeCount = pasteboard.changeCount
     }
@@ -57,6 +68,13 @@ class ClipboardMonitor: ObservableObject {
 
         changeCount = currentChangeCount
 
+        // Skip if we're in a paste operation (our own clipboard modification)
+        if skipNextChange {
+            skipNextChange = false
+            print("⏭️ Skipping clipboard change from paste operation")
+            return
+        }
+
         // Get source application first to check exclusion
         let sourceApp = ClipboardContentExtractor.getFrontmostApp()
 
@@ -79,23 +97,32 @@ class ClipboardMonitor: ObservableObject {
             return
         }
 
-        // Handle image storage if needed
-        var blobPath: String? = nil
-        if let imageData = imageData, let blobStorage = blobStorage {
-            do {
-                blobPath = try await blobStorage.save(imageData: imageData, hash: hash)
-            } catch {
-                print("⚠️ Failed to save image blob: \(error)")
+        // Store content as blob - for images use imageData, for text use UTF-8 encoded content
+        var blobContent: Data? = nil
+        if let imageData = imageData {
+            if imageData.count <= maxImageSize {
+                blobContent = imageData
+            } else {
+                print("⚠️ Image too large (\(imageData.count) bytes), skipping blob storage")
             }
+        } else {
+            // Store text content as UTF-8 data
+            blobContent = content.data(using: .utf8)
         }
 
-        // Create clipboard item
+        // Create clipboard item (truncate text content to 100 chars for summary)
+        let truncatedContent = type == .image ? content : String(content.prefix(100))
+
+        // Generate preview content (up to 1000 chars for popover display)
+        let previewContent = generatePreviewContent(content: content, type: type, blobData: blobContent)
+
         let item = ClipboardItem(
-            content: content,
+            content: truncatedContent,
             contentType: type,
             contentHash: hash,
             sourceApp: sourceApp,
-            blobPath: blobPath
+            blobContent: blobContent,
+            previewContent: previewContent
         )
 
         // Save to storage
@@ -107,6 +134,45 @@ class ClipboardMonitor: ObservableObject {
             NotificationCenter.default.post(name: .clipboardItemAdded, object: item)
         } catch {
             print("❌ Failed to save clipboard item: \(error)")
+        }
+    }
+
+    /// Generate preview content for popover display (up to 1000 chars)
+    private func generatePreviewContent(content: String, type: ClipboardContentType, blobData: Data?) -> String? {
+        let previewLimit = 1000
+
+        switch type {
+        case .text, .url:
+            // For plain text and URLs, take first 1000 chars
+            if content.count <= previewLimit {
+                return content
+            }
+            return String(content.prefix(previewLimit))
+
+        case .richText:
+            // For rich text, extract plain text from RTF/HTML
+            guard let blobData = blobData else {
+                return String(content.prefix(previewLimit))
+            }
+
+            // Try RTF first
+            if let attributed = NSAttributedString(rtf: blobData, documentAttributes: nil) {
+                let plainText = attributed.string
+                return String(plainText.prefix(previewLimit))
+            }
+
+            // Try HTML
+            if let attributed = NSAttributedString(html: blobData, documentAttributes: nil) {
+                let plainText = attributed.string
+                return String(plainText.prefix(previewLimit))
+            }
+
+            // Fallback to content
+            return String(content.prefix(previewLimit))
+
+        case .image, .fileURL:
+            // For images and files, use the content description (already descriptive)
+            return nil
         }
     }
 

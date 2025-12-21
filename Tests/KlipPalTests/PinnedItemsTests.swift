@@ -18,7 +18,7 @@ final class PinnedItemsTests: XCTestCase {
         appDelegate.storage = storage
         AppDelegate.shared = appDelegate
 
-        viewModel = OverlayViewModel(storage: storage, blobStorage: nil)
+        viewModel = OverlayViewModel(storage: storage)
     }
 
     override func tearDown() async throws {
@@ -40,7 +40,7 @@ final class PinnedItemsTests: XCTestCase {
         try await storage.save(item)
 
         // Load items into view model
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         XCTAssertEqual(viewModel.items.count, 1)
@@ -68,7 +68,7 @@ final class PinnedItemsTests: XCTestCase {
         )
         try await storage.save(item)
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         XCTAssertTrue(viewModel.items[0].isFavorite)
@@ -101,7 +101,7 @@ final class PinnedItemsTests: XCTestCase {
         try await storage.save(pinnedItem)
         try await storage.save(regularItem)
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Initially shows all items
@@ -132,7 +132,7 @@ final class PinnedItemsTests: XCTestCase {
         try await storage.save(pinnedItem)
         try await storage.save(regularItem)
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Switch to pinned only
@@ -168,7 +168,7 @@ final class PinnedItemsTests: XCTestCase {
         try await storage.save(pinned2)
         try await storage.save(regular)
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         XCTAssertEqual(viewModel.pinnedCount, 2)
@@ -209,7 +209,7 @@ final class PinnedItemsTests: XCTestCase {
         try await storage.save(recentRegular)
         try await storage.save(oldRegular)
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Search for "apple"
@@ -242,7 +242,7 @@ final class PinnedItemsTests: XCTestCase {
         try await storage.save(pinnedItem)
         try await storage.save(regularItem)
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Enable pinned only mode
@@ -294,7 +294,7 @@ final class PinnedItemsTests: XCTestCase {
         try await storage.save(recentRegularItem)
         try await storage.save(oldRegularItem)
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Items should be ordered by timestamp, not favorites first
@@ -336,6 +336,73 @@ final class PinnedItemsTests: XCTestCase {
         XCTAssertEqual(items[1].content, "Pinned old")
     }
 
+    // MARK: - Toggle Favorite Preserves Blob Content Tests
+
+    func testToggleFavoritePreservesBlobContent() async throws {
+        // Create an item with blob content
+        let blobData = Data([0x01, 0x02, 0x03, 0x04, 0x05])
+        let item = ClipboardItem(
+            content: "Test image",
+            contentType: .image,
+            contentHash: "blob_preserve_test",
+            blobContent: blobData,
+            isFavorite: false
+        )
+
+        try await storage.save(item)
+
+        viewModel.loadItemsFromStorage()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        // Toggle favorite (this should NOT wipe blob content)
+        viewModel.toggleFavorite(viewModel.items[0])
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        // Fetch the item with blob content included
+        let storedItems = try await storage.fetchItems(limit: nil, favoriteOnly: false, includeContent: true)
+        XCTAssertEqual(storedItems.count, 1)
+
+        // Verify blob content is preserved
+        XCTAssertEqual(storedItems[0].blobContent, blobData, "Blob content should be preserved after toggling favorite")
+        XCTAssertTrue(storedItems[0].isFavorite, "Favorite status should be true")
+    }
+
+    func testToggleFavoritePreservesAllFields() async throws {
+        // Create an item with all fields populated
+        let blobData = "Full text content".data(using: .utf8)!
+        let item = ClipboardItem(
+            content: "Summary text",
+            contentType: .text,
+            contentHash: "fields_preserve_test",
+            sourceApp: "TestApp",
+            blobContent: blobData,
+            isFavorite: false
+        )
+
+        try await storage.save(item)
+
+        viewModel.loadItemsFromStorage()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        // Toggle favorite twice (pin then unpin)
+        viewModel.toggleFavorite(viewModel.items[0])
+        try await Task.sleep(nanoseconds: 100_000_000)
+        viewModel.toggleFavorite(viewModel.items[0])
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        // Fetch the item with all content
+        let storedItems = try await storage.fetchItems(limit: nil, favoriteOnly: false, includeContent: true)
+        XCTAssertEqual(storedItems.count, 1)
+
+        let storedItem = storedItems[0]
+        XCTAssertEqual(storedItem.content, "Summary text")
+        XCTAssertEqual(storedItem.contentType, .text)
+        XCTAssertEqual(storedItem.contentHash, "fields_preserve_test")
+        XCTAssertEqual(storedItem.sourceApp, "TestApp")
+        XCTAssertEqual(storedItem.blobContent, blobData, "Blob content should be preserved")
+        XCTAssertFalse(storedItem.isFavorite, "Should be unpinned after toggle twice")
+    }
+
     // MARK: - Toggle Favorite Updates Filtered Items Tests
 
     func testToggleFavoriteUpdatesFilteredItems() async throws {
@@ -348,7 +415,7 @@ final class PinnedItemsTests: XCTestCase {
 
         try await storage.save(item)
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Enable pinned only mode - should be empty

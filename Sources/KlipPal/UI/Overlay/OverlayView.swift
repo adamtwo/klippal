@@ -103,10 +103,7 @@ struct OverlayView: View {
                 pinnedCount: viewModel.pinnedCount,
                 onToggle: { viewModel.setShowingPinnedOnly($0) },
                 onSettings: {
-                    viewModel.closeWindow()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        PreferencesWindowController.show()
-                    }
+                    viewModel.openPreferences()
                 }
             )
 
@@ -168,17 +165,15 @@ struct OverlayView: View {
                                     item: item,
                                     isSelected: index == viewModel.selectedIndex,
                                     highlightRanges: viewModel.matchedRanges(at: index),
-                                    thumbnailImage: viewModel.thumbnail(for: item),
+                                    thumbnailImage: viewModel.thumbnailCache[item.contentHash],
                                     onDelete: { viewModel.deleteItem(item) },
                                     onToggleFavorite: { viewModel.toggleFavorite(item) },
                                     onSingleClick: {
-                                        // Single-click: just select (no copy)
                                         viewModel.selectedIndex = index
                                     },
-                                    onDoubleClick: {
-                                        // Double-click: copy, close, and paste
+                                    onDoubleClick: { asPlainText in
                                         viewModel.selectedIndex = index
-                                        pasteItem(item)
+                                        pasteItem(item, asPlainText: asPlainText)
                                     },
                                     onLoadFullImage: {
                                         await viewModel.loadFullImage(for: item)
@@ -271,7 +266,6 @@ struct OverlayView: View {
             }
         }
         .onChange(of: isSearchFieldFocused) { newValue in
-            print("🔍 Search field focus changed: \(newValue)")
             viewModel.isSearchFieldFocused = newValue
         }
     }
@@ -282,8 +276,8 @@ struct OverlayView: View {
         pasteItem(item)
     }
 
-    private func pasteItem(_ item: ClipboardItem) {
-        viewModel.pasteItem(item)
+    private func pasteItem(_ item: ClipboardItem, asPlainText: Bool = false) {
+        viewModel.pasteItem(item, asPlainText: asPlainText)
     }
 }
 

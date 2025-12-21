@@ -25,10 +25,10 @@ class OverlayViewModel: ObservableObject {
     private var currentSearchQuery: String = ""
 
     private let storage: SQLiteStorageEngine
-    private let blobStorage: BlobStorageManager?
     private let pasteManager: PasteManager
     private let searchEngine = SearchEngine()
     private var notificationObserver: Any?
+    private var historyClearedObserver: Any?
 
     /// Callback invoked before pasting (to close window and restore previous app)
     var onBeforePaste: (() -> Void)?
@@ -36,21 +36,55 @@ class OverlayViewModel: ObservableObject {
     /// Callback invoked to close the window
     var onCloseWindow: (() -> Void)?
 
-    init(storage: SQLiteStorageEngine? = nil, blobStorage: BlobStorageManager? = nil) {
+    /// Callback invoked to close and open preferences (handles race condition)
+    var onOpenPreferences: ((SettingsCategory) -> Void)?
+
+    init(storage: SQLiteStorageEngine? = nil, preloadedItems: [ClipboardItem] = []) {
         // Get shared storage from AppDelegate
         self.storage = storage ?? AppDelegate.shared.storage!
-        self.blobStorage = blobStorage ?? AppDelegate.shared.blobStorage
         self.pasteManager = PasteManager()
 
-        // Observe clipboard item additions
+        // Use pre-loaded items if provided, otherwise load from storage
+        if !preloadedItems.isEmpty {
+            self.items = preloadedItems
+            self.filteredItems = preloadedItems
+            // Load thumbnails for pre-loaded items
+            Task { @MainActor [weak self] in
+                self?.loadThumbnails(for: preloadedItems)
+            }
+        } else {
+            // Fallback: load from storage if no pre-loaded items
+            Task { @MainActor [weak self] in
+                self?.loadItemsFromStorage()
+            }
+        }
+
+        // Observe clipboard item additions - add incrementally instead of reloading
         notificationObserver = NotificationCenter.default.addObserver(
             forName: .clipboardItemAdded,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self = self else { return }
+            Task { @MainActor [weak self] in
+                if let newItem = notification.object as? ClipboardItem {
+                    self?.addItemIncrementally(newItem)
+                } else {
+                    // Fallback to full reload if item not in notification
+                    self?.loadItemsFromStorage()
+                }
+            }
+        }
+
+        // Observe history cleared - clear local list
+        historyClearedObserver = NotificationCenter.default.addObserver(
+            forName: .clipboardHistoryCleared,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             guard let self = self else { return }
             Task { @MainActor [weak self] in
-                self?.loadItems()
+                self?.clearLocalItems()
             }
         }
     }
@@ -59,51 +93,76 @@ class OverlayViewModel: ObservableObject {
         if let observer = notificationObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        if let observer = historyClearedObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
+    /// Called when the overlay window is shown - uses cached items, no database fetch
     func loadItems() {
+        // Re-apply current filters (search query and/or pinned-only mode)
+        applyFilters()
+        // Always reset selection to first item when window appears
+        selectedIndex = 0
+        // Trigger scroll to top
+        scrollToTopTrigger += 1
+    }
+
+    /// Loads items from storage - called on init and when full refresh is needed
+    func loadItemsFromStorage() {
         Task {
             do {
                 let limit = PreferencesManager.shared.historyLimit
                 items = try await storage.fetchItems(limit: limit, favoriteOnly: false)
-                // Re-apply current filters (search query and/or pinned-only mode)
+                // Re-apply current filters
                 applyFilters()
-                // Always reset selection to first item when window appears
-                selectedIndex = 0
-                // Trigger scroll to top
-                scrollToTopTrigger += 1
                 // Load thumbnails for image items
-                await loadThumbnails(for: items)
+                loadThumbnails(for: items)
             } catch {
-                print("❌ Failed to load items: \(error)")
+                print("Failed to load items: \(error)")
             }
         }
     }
 
-    /// Load thumbnails for image items
-    private func loadThumbnails(for items: [ClipboardItem]) async {
-        guard let blobStorage = blobStorage else { return }
+    /// Adds a new item to the front of the list without reloading from storage
+    private func addItemIncrementally(_ newItem: ClipboardItem) {
+        // Insert at the beginning (most recent)
+        items.insert(newItem, at: 0)
 
+        // Enforce history limit
+        let limit = PreferencesManager.shared.historyLimit
+        if items.count > limit {
+            items = Array(items.prefix(limit))
+        }
+
+        // Re-apply filters to update filteredItems
+        applyFilters()
+
+        // Load thumbnail if it's an image
+        if newItem.contentType == .image {
+            loadThumbnails(for: [newItem])
+        }
+    }
+
+    /// Load thumbnails for image items from their blob content
+    private func loadThumbnails(for items: [ClipboardItem]) {
         for item in items where item.contentType == .image {
             // Skip if already cached
-            if thumbnailCache[item.contentHash] != nil { continue }
+            if thumbnailCache[item.contentHash] != nil {
+                continue
+            }
 
-            // Try to load thumbnail
-            do {
-                let thumbnailData = try await blobStorage.loadThumbnail(hash: item.contentHash)
-                if let image = NSImage(data: thumbnailData) {
-                    thumbnailCache[item.contentHash] = image
+            // Generate thumbnail from blob content (fetch lazily if needed)
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+
+                var blobContent = item.blobContent
+                if blobContent == nil {
+                    blobContent = try? await self.storage.fetchBlobContent(byHash: item.contentHash)
                 }
-            } catch {
-                // If thumbnail doesn't exist, try to load from full blob path
-                if let blobPath = item.blobPath {
-                    do {
-                        let imageData = try await blobStorage.load(relativePath: blobPath)
-                        if let thumbnail = ThumbnailGenerator.generateThumbnail(from: imageData, maxSize: 80) {
-                            thumbnailCache[item.contentHash] = thumbnail
-                        }
-                    } catch {
-                        print("⚠️ Failed to load image for thumbnail: \(error)")
+                if let blobContent = blobContent {
+                    if let thumbnail = ThumbnailGenerator.generateThumbnail(from: blobContent, maxSize: 80) {
+                        self.thumbnailCache[item.contentHash] = thumbnail
                     }
                 }
             }
@@ -125,18 +184,17 @@ class OverlayViewModel: ObservableObject {
             return cached
         }
 
-        // Load from blob storage
-        guard let blobStorage = blobStorage,
-              let blobPath = item.blobPath else { return nil }
+        // Load from blob content (fetch lazily if needed)
+        var blobContent = item.blobContent
+        if blobContent == nil {
+            blobContent = try? await storage.fetchBlobContent(byHash: item.contentHash)
+        }
 
-        do {
-            let imageData = try await blobStorage.load(relativePath: blobPath)
-            if let image = NSImage(data: imageData) {
-                fullImageCache[item.contentHash] = image
-                return image
-            }
-        } catch {
-            print("⚠️ Failed to load full image: \(error)")
+        guard let blobContent = blobContent else { return nil }
+
+        if let image = NSImage(data: blobContent) {
+            fullImageCache[item.contentHash] = image
+            return image
         }
 
         return nil
@@ -179,16 +237,25 @@ class OverlayViewModel: ObservableObject {
         return hasExact && hasFuzzy
     }
 
-    func pasteItem(_ item: ClipboardItem) {
-        print("📋 Pasting item: \(item.content.prefix(50))...")
+    /// Paste an item from history
+    /// - Parameters:
+    ///   - item: The clipboard item to paste
+    ///   - asPlainText: If true, paste as plain text regardless of content type (Shift+Enter)
+    func pasteItem(_ item: ClipboardItem, asPlainText: Bool = false) {
+        print("Pasting item\(asPlainText ? " as plain text" : ""): \(item.content.prefix(50))...")
 
         // Update timestamp to bring item to top of history
         Task {
             do {
                 try await storage.updateTimestamp(forHash: item.contentHash)
-                print("🔄 Updated timestamp for pasted item")
+                print("Updated timestamp for pasted item")
+
+                // Move item to top locally
+                await MainActor.run {
+                    moveItemToTop(item)
+                }
             } catch {
-                print("⚠️ Failed to update timestamp: \(error)")
+                print("Failed to update timestamp: \(error)")
             }
         }
 
@@ -199,10 +266,10 @@ class OverlayViewModel: ObservableObject {
             do {
                 // Longer delay to allow window to close and app to switch
                 try await Task.sleep(nanoseconds: 200_000_000) // 200ms
-                print("📋 Starting paste simulation...")
-                try await pasteManager.paste(item)
+                print("Starting paste simulation...")
+                try await pasteManager.paste(item, asPlainText: asPlainText)
             } catch {
-                print("❌ Failed to paste: \(error)")
+                print("Failed to paste: \(error)")
             }
         }
     }
@@ -212,14 +279,12 @@ class OverlayViewModel: ObservableObject {
     func selectNext() {
         guard !filteredItems.isEmpty else { return }
         selectedIndex = min(selectedIndex + 1, filteredItems.count - 1)
-        print("⌨️ Selected index: \(selectedIndex)")
         triggerScrollToSelection()
     }
 
     func selectPrevious() {
         guard !filteredItems.isEmpty else { return }
         selectedIndex = max(selectedIndex - 1, 0)
-        print("⌨️ Selected index: \(selectedIndex)")
         triggerScrollToSelection()
     }
 
@@ -229,10 +294,12 @@ class OverlayViewModel: ObservableObject {
         scrollToSelection = filteredItems[selectedIndex].id
     }
 
-    func pasteSelected() {
+    /// Paste the currently selected item
+    /// - Parameter asPlainText: If true, paste as plain text regardless of content type (Shift+Enter)
+    func pasteSelected(asPlainText: Bool = false) {
         guard selectedIndex < filteredItems.count else { return }
         let item = filteredItems[selectedIndex]
-        pasteItem(item)
+        pasteItem(item, asPlainText: asPlainText)
     }
 
     /// Copy the selected item to the system clipboard (Cmd+C)
@@ -240,27 +307,100 @@ class OverlayViewModel: ObservableObject {
         guard selectedIndex < filteredItems.count else { return }
         let item = filteredItems[selectedIndex]
 
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(item.content, forType: .string)
-        print("📋 Copied to clipboard: \(item.content.prefix(50))...")
-
-        // Update timestamp to bring item to top of history
         Task {
+            // Fetch blob content if not already loaded
+            var blobContent = item.blobContent
+            if blobContent == nil {
+                blobContent = try? await storage.fetchBlobContent(byHash: item.contentHash)
+            }
+
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+
+            switch item.contentType {
+            case .image:
+                if let blobContent = blobContent, let image = NSImage(data: blobContent) {
+                    pasteboard.writeObjects([image])
+                    print("Copied image to clipboard")
+                }
+
+            case .fileURL:
+                if let url = URL(string: item.content), url.isFileURL {
+                    pasteboard.writeObjects([url as NSURL])
+                    print("Copied file URL to clipboard: \(url.path)")
+                }
+
+            case .richText:
+                if let blobContent = blobContent {
+                    if let attributed = NSAttributedString(rtf: blobContent, documentAttributes: nil) {
+                        pasteboard.setData(blobContent, forType: .rtf)
+                        pasteboard.setString(attributed.string, forType: .string)
+                        print("Copied RTF to clipboard")
+                    } else if let attributed = NSAttributedString(html: blobContent, documentAttributes: nil) {
+                        pasteboard.setData(blobContent, forType: .html)
+                        pasteboard.setString(attributed.string, forType: .string)
+                        print("Copied HTML to clipboard")
+                    } else {
+                        pasteboard.setString(item.content, forType: .string)
+                    }
+                } else {
+                    pasteboard.setString(item.content, forType: .string)
+                }
+
+            case .text, .url:
+                // Use full text from blob if available
+                if let blobContent = blobContent,
+                   let fullText = String(data: blobContent, encoding: .utf8) {
+                    pasteboard.setString(fullText, forType: .string)
+                    print("Copied full text to clipboard: \(fullText.prefix(50))...")
+                } else {
+                    pasteboard.setString(item.content, forType: .string)
+                    print("Copied summary to clipboard: \(item.content.prefix(50))...")
+                }
+            }
+
+            // Update timestamp to bring item to top of history
             do {
                 try await storage.updateTimestamp(forHash: item.contentHash)
-                print("🔄 Updated timestamp for copied item")
-            } catch {
-                print("⚠️ Failed to update timestamp: \(error)")
-            }
-        }
+                print("Updated timestamp for copied item")
 
-        // Show brief visual feedback
-        showCopiedFeedback = true
-        Task {
+                // Move item to top locally (avoid full database reload)
+                moveItemToTop(item)
+                selectedIndex = 0
+            } catch {
+                print("Failed to update timestamp: \(error)")
+            }
+
+            // Show brief visual feedback
+            showCopiedFeedback = true
             try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 seconds
             showCopiedFeedback = false
         }
+    }
+
+    /// Move an item to the top of the list (after timestamp update)
+    private func moveItemToTop(_ item: ClipboardItem) {
+        // Update item with new timestamp (preserving all other fields)
+        var updatedItem = item
+        updatedItem = ClipboardItem(
+            id: item.id,
+            content: item.content,
+            contentType: item.contentType,
+            contentHash: item.contentHash,
+            timestamp: Date(),
+            sourceApp: item.sourceApp,
+            blobContent: item.blobContent,
+            blobSize: item.blobSize,
+            isFavorite: item.isFavorite,
+            previewContent: item.previewContent
+        )
+
+        // Remove from current position and insert at top
+        items.removeAll { $0.id == item.id }
+        items.insert(updatedItem, at: 0)
+
+        // Re-apply filters to update filteredItems
+        applyFilters()
     }
 
     /// Close the overlay window
@@ -268,12 +408,17 @@ class OverlayViewModel: ObservableObject {
         onCloseWindow?()
     }
 
+    /// Open preferences window (handles race condition with overlay closing)
+    func openPreferences(category: SettingsCategory = .general) {
+        onOpenPreferences?(category)
+    }
+
     /// Delete an item from history
     func deleteItem(_ item: ClipboardItem) {
         Task {
             do {
                 try await storage.delete(item)
-                print("🗑️ Deleted item: \(item.content.prefix(50))...")
+                print("Deleted item: \(item.content.prefix(50))...")
 
                 // Remove from local arrays
                 items.removeAll { $0.id == item.id }
@@ -284,9 +429,20 @@ class OverlayViewModel: ObservableObject {
                     selectedIndex = max(0, filteredItems.count - 1)
                 }
             } catch {
-                print("❌ Failed to delete item: \(error)")
+                print("Failed to delete item: \(error)")
             }
         }
+    }
+
+    /// Clear all local items (called when history is cleared from preferences)
+    private func clearLocalItems() {
+        items.removeAll()
+        filteredItems.removeAll()
+        searchResults.removeAll()
+        thumbnailCache.removeAll()
+        fullImageCache.removeAll()
+        selectedIndex = 0
+        print("✅ Local items cleared")
     }
 
     // MARK: - Pinned Items
@@ -300,13 +456,15 @@ class OverlayViewModel: ObservableObject {
     func toggleFavorite(_ item: ClipboardItem) {
         Task {
             do {
-                // Create updated item with toggled favorite status
-                var updatedItem = item
-                updatedItem.isFavorite = !item.isFavorite
+                let newFavoriteStatus = !item.isFavorite
 
-                // Save to storage
-                try await storage.save(updatedItem)
-                print("📌 Toggled favorite for: \(item.content.prefix(50))... -> \(updatedItem.isFavorite)")
+                // Update only the favorite field (preserves blob content)
+                try await storage.updateFavoriteStatus(forHash: item.contentHash, isFavorite: newFavoriteStatus)
+                print("Toggled favorite for: \(item.content.prefix(50))... -> \(newFavoriteStatus)")
+
+                // Create updated item for local state
+                var updatedItem = item
+                updatedItem.isFavorite = newFavoriteStatus
 
                 // Update in local arrays
                 if let index = items.firstIndex(where: { $0.id == item.id }) {
@@ -325,7 +483,7 @@ class OverlayViewModel: ObservableObject {
                     }
                 }
             } catch {
-                print("❌ Failed to toggle favorite: \(error)")
+                print("Failed to toggle favorite: \(error)")
             }
         }
     }

@@ -1,6 +1,37 @@
 import Foundation
 import Combine
 import ServiceManagement
+import AppKit
+
+/// Modifier key options for triggering plain text paste
+enum PlainTextPasteModifier: String, CaseIterable, Identifiable {
+    case shift = "shift"
+    case option = "option"
+    case control = "control"
+    case command = "command"
+
+    var id: String { rawValue }
+
+    /// Display name with symbol
+    var displayName: String {
+        switch self {
+        case .shift: return "⇧ Shift"
+        case .option: return "⌥ Option"
+        case .control: return "⌃ Control"
+        case .command: return "⌘ Command"
+        }
+    }
+
+    /// The NSEvent.ModifierFlags for this modifier
+    var modifierFlags: NSEvent.ModifierFlags {
+        switch self {
+        case .shift: return .shift
+        case .option: return .option
+        case .control: return .control
+        case .command: return .command
+        }
+    }
+}
 
 /// Manages user preferences with UserDefaults storage and Combine publishers
 @MainActor
@@ -17,6 +48,7 @@ final class PreferencesManager: ObservableObject {
         static let launchAtLogin = "launchAtLogin"
         static let showInDock = "showInDock"
         static let fuzzySearchEnabled = "fuzzySearchEnabled"
+        static let plainTextPasteModifier = "plainTextPasteModifier"
     }
 
     // MARK: - Default Values
@@ -26,6 +58,7 @@ final class PreferencesManager: ObservableObject {
         static let retentionDays = 30
         static let hotkeyKeyCode: UInt32 = 9  // 'V' key
         static let hotkeyModifiers: UInt32 = 0x0100 | 0x0200  // Cmd + Shift
+        static let plainTextPasteModifier = PlainTextPasteModifier.shift
     }
 
     // MARK: - Published Properties
@@ -73,6 +106,13 @@ final class PreferencesManager: ObservableObject {
         }
     }
 
+    /// Modifier key for plain text paste (Shift by default)
+    @Published var plainTextPasteModifier: PlainTextPasteModifier {
+        didSet {
+            UserDefaults.standard.set(plainTextPasteModifier.rawValue, forKey: Keys.plainTextPasteModifier)
+        }
+    }
+
     // MARK: - Initialization
 
     private init() {
@@ -85,6 +125,14 @@ final class PreferencesManager: ObservableObject {
         hotkeyModifiers = UInt32(defaults.object(forKey: Keys.hotkeyModifiers) as? Int ?? Int(Defaults.hotkeyModifiers))
         launchAtLogin = defaults.bool(forKey: Keys.launchAtLogin)
         fuzzySearchEnabled = defaults.bool(forKey: Keys.fuzzySearchEnabled) // defaults to false
+
+        // Load plain text paste modifier (defaults to Shift)
+        if let modifierRaw = defaults.string(forKey: Keys.plainTextPasteModifier),
+           let modifier = PlainTextPasteModifier(rawValue: modifierRaw) {
+            plainTextPasteModifier = modifier
+        } else {
+            plainTextPasteModifier = Defaults.plainTextPasteModifier
+        }
     }
 
     // MARK: - Launch at Login
@@ -125,6 +173,7 @@ final class PreferencesManager: ObservableObject {
         hotkeyModifiers = Defaults.hotkeyModifiers
         launchAtLogin = false
         fuzzySearchEnabled = false
+        plainTextPasteModifier = Defaults.plainTextPasteModifier
     }
 
     // MARK: - Hotkey Helpers

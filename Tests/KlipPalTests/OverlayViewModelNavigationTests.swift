@@ -18,7 +18,7 @@ final class OverlayViewModelNavigationTests: XCTestCase {
         appDelegate.storage = storage
         AppDelegate.shared = appDelegate
 
-        viewModel = OverlayViewModel(storage: storage, blobStorage: nil)
+        viewModel = OverlayViewModel(storage: storage)
     }
 
     override func tearDown() async throws {
@@ -43,7 +43,7 @@ final class OverlayViewModelNavigationTests: XCTestCase {
             try await storage.save(item)
         }
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         XCTAssertEqual(viewModel.selectedIndex, 0)
@@ -69,7 +69,7 @@ final class OverlayViewModelNavigationTests: XCTestCase {
             try await storage.save(item)
         }
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Move to last item
@@ -105,7 +105,7 @@ final class OverlayViewModelNavigationTests: XCTestCase {
             try await storage.save(item)
         }
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         XCTAssertNil(viewModel.scrollToSelection, "Should be nil initially")
@@ -132,7 +132,7 @@ final class OverlayViewModelNavigationTests: XCTestCase {
             try await storage.save(item)
         }
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         viewModel.selectedIndex = 3
@@ -158,7 +158,7 @@ final class OverlayViewModelNavigationTests: XCTestCase {
             try await storage.save(item)
         }
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         XCTAssertEqual(viewModel.selectedIndex, 0)
@@ -192,7 +192,7 @@ final class OverlayViewModelNavigationTests: XCTestCase {
             try await storage.save(item)
         }
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         viewModel.selectedIndex = 3
@@ -220,7 +220,7 @@ final class OverlayViewModelNavigationTests: XCTestCase {
             try await storage.save(item)
         }
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         XCTAssertNil(viewModel.scrollToSelection, "Should be nil initially")
@@ -245,7 +245,7 @@ final class OverlayViewModelNavigationTests: XCTestCase {
         try await storage.save(item3)
         try await storage.save(item4)
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Search for "Apple" - should filter to 2 items
@@ -280,7 +280,7 @@ final class OverlayViewModelNavigationTests: XCTestCase {
             try await storage.save(item)
         }
 
-        viewModel.loadItems()
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Navigate down several times
@@ -315,15 +315,15 @@ final class OverlayViewModelNavigationTests: XCTestCase {
             try await storage.save(item)
         }
 
-        viewModel.loadItems()
+        // First load from storage
+        viewModel.loadItemsFromStorage()
         try await Task.sleep(nanoseconds: 100_000_000)
 
         // Simulate user scrolling down and selecting item 3
         viewModel.selectedIndex = 3
 
-        // Reload items (simulates window re-opening)
+        // Call loadItems() (simulates window re-opening) - should reset to 0
         viewModel.loadItems()
-        try await Task.sleep(nanoseconds: 100_000_000)
 
         XCTAssertEqual(viewModel.selectedIndex, 0, "Selected index should reset to 0 on loadItems")
     }
@@ -342,10 +342,14 @@ final class OverlayViewModelNavigationTests: XCTestCase {
             try await storage.save(item)
         }
 
+        // First load from storage
+        viewModel.loadItemsFromStorage()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
         let initialTrigger = viewModel.scrollToTopTrigger
 
+        // Call loadItems() (simulates window re-opening)
         viewModel.loadItems()
-        try await Task.sleep(nanoseconds: 100_000_000)
 
         XCTAssertGreaterThan(viewModel.scrollToTopTrigger, initialTrigger,
             "scrollToTopTrigger should increment on loadItems")
@@ -360,16 +364,19 @@ final class OverlayViewModelNavigationTests: XCTestCase {
         )
         try await storage.save(item)
 
+        // First load from storage
+        viewModel.loadItemsFromStorage()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
         let trigger1 = viewModel.scrollToTopTrigger
 
+        // Call loadItems() multiple times (simulates window re-openings)
         viewModel.loadItems()
-        try await Task.sleep(nanoseconds: 100_000_000)
 
         let trigger2 = viewModel.scrollToTopTrigger
         XCTAssertGreaterThan(trigger2, trigger1, "Trigger should increment after first load")
 
         viewModel.loadItems()
-        try await Task.sleep(nanoseconds: 100_000_000)
 
         let trigger3 = viewModel.scrollToTopTrigger
         XCTAssertGreaterThan(trigger3, trigger2, "Trigger should increment after second load")

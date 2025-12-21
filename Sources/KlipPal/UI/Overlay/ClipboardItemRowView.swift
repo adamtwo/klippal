@@ -9,7 +9,8 @@ struct ClipboardItemRowView: View {
     var onDelete: (() -> Void)?
     var onToggleFavorite: (() -> Void)?
     var onSingleClick: (() -> Void)?
-    var onDoubleClick: (() -> Void)?
+    /// Called on double-click. Parameter is true if Shift was held (paste as plain text)
+    var onDoubleClick: ((_ asPlainText: Bool) -> Void)?
     var onLoadFullImage: (() async -> NSImage?)?
 
     @State private var isHoveringPreviewIcon = false
@@ -22,7 +23,7 @@ struct ClipboardItemRowView: View {
     /// Using .leading positions the popover to the left of the main window
     static let popoverArrowEdge: Edge = .leading
 
-    init(item: ClipboardItem, isSelected: Bool, highlightRanges: [NSRange] = [], thumbnailImage: NSImage? = nil, onDelete: (() -> Void)? = nil, onToggleFavorite: (() -> Void)? = nil, onSingleClick: (() -> Void)? = nil, onDoubleClick: (() -> Void)? = nil, onLoadFullImage: (() async -> NSImage?)? = nil) {
+    init(item: ClipboardItem, isSelected: Bool, highlightRanges: [NSRange] = [], thumbnailImage: NSImage? = nil, onDelete: (() -> Void)? = nil, onToggleFavorite: (() -> Void)? = nil, onSingleClick: (() -> Void)? = nil, onDoubleClick: ((_ asPlainText: Bool) -> Void)? = nil, onLoadFullImage: (() async -> NSImage?)? = nil) {
         self.item = item
         self.isSelected = isSelected
         self.highlightRanges = highlightRanges
@@ -74,13 +75,14 @@ struct ClipboardItemRowView: View {
                 .onHover { hovering in
                     guard shouldShowPreviewPopover else { return }
                     isHoveringPreviewIcon = hovering
-                    // Pre-load content when hovering starts
+                    // Pre-load content when hovering starts (only for async content)
                     if hovering {
                         if item.contentType == .image && fullImage == nil && !isLoadingFullImage {
                             loadFullImageAsync()
                         } else if item.contentType == .url && urlPreview == nil && !isLoadingURLPreview {
                             loadURLPreviewAsync()
                         }
+                        // Text preview is now pre-computed and stored in item.previewContent
                     }
                 }
                 .onTapGesture {
@@ -101,8 +103,9 @@ struct ClipboardItemRowView: View {
                             isLoading: isLoadingURLPreview
                         )
                     } else {
+                        // Use pre-computed preview content (stored in database)
                         TextPreviewPopover(
-                            content: item.content,
+                            content: item.previewContent ?? item.content,
                             characterCount: item.formattedCharacterCount
                         )
                     }
@@ -172,7 +175,10 @@ struct ClipboardItemRowView: View {
                 }
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) {
-                    onDoubleClick?()
+                    // Check configured modifier for paste-as-plain-text
+                    let plainTextModifier = PreferencesManager.shared.plainTextPasteModifier.modifierFlags
+                    let asPlainText = NSEvent.modifierFlags.contains(plainTextModifier)
+                    onDoubleClick?(asPlainText)
                 }
                 .simultaneousGesture(
                     TapGesture(count: 1).onEnded {
@@ -306,6 +312,8 @@ struct ClipboardItemRowView: View {
         switch item.contentType {
         case .text:
             return "doc.text"
+        case .richText:
+            return "doc.richtext"
         case .url:
             if item.isCodeRepository {
                 return "chevron.left.forwardslash.chevron.right"
@@ -326,6 +334,7 @@ struct ClipboardItemRowView: View {
     private var iconColor: Color {
         switch item.contentType {
         case .text: return .primary
+        case .richText: return .indigo
         case .url: return .purple
         case .image: return .blue
         case .fileURL:
@@ -349,6 +358,7 @@ struct ClipboardItemRowView: View {
     private var iconBackgroundColor: Color {
         switch item.contentType {
         case .text: return Color.secondary.opacity(0.1)
+        case .richText: return Color.indigo.opacity(0.1)
         case .url: return Color.purple.opacity(0.1)
         case .image: return Color.blue.opacity(0.1)
         case .fileURL:
@@ -565,6 +575,7 @@ struct ImagePreviewPopover: View {
 struct TextPreviewPopover: View {
     let content: String
     let characterCount: String
+    var isLoading: Bool = false
 
     /// Width for the preview text area
     private let textWidth: CGFloat = 380
@@ -575,31 +586,46 @@ struct TextPreviewPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ScrollView {
-                Text(previewText)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundColor(.primary)
-                    .textSelection(.enabled)
-                    .lineLimit(nil)
-                    .frame(width: textWidth, alignment: .leading)
-            }
-            .frame(width: textWidth)
-            .frame(maxHeight: maxHeight)
-
-            HStack {
-                Text(characterCount)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                if content.count > maxPreviewChars {
-                    Text("• showing first \(maxPreviewChars) chars")
-                        .font(.caption)
-                        .foregroundColor(.orange)
+            if isLoading {
+                HStack {
+                    Spacer()
+                    VStack(spacing: 8) {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Loading content...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
                 }
+                .frame(width: textWidth, height: 100)
+            } else {
+                ScrollView {
+                    Text(previewText)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(.primary)
+                        .textSelection(.enabled)
+                        .lineLimit(nil)
+                        .frame(width: textWidth, alignment: .leading)
+                }
+                .frame(width: textWidth)
+                .frame(maxHeight: maxHeight)
 
-                Spacer()
+                HStack {
+                    Text(characterCount)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    if content.count > maxPreviewChars {
+                        Text("• showing first \(maxPreviewChars) chars")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+
+                    Spacer()
+                }
+                .frame(width: textWidth)
             }
-            .frame(width: textWidth)
         }
         .padding(12)
     }

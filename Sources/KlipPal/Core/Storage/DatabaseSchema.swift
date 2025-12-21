@@ -3,19 +3,20 @@ import Foundation
 /// Database schema definitions and migrations
 enum DatabaseSchema {
     /// Current schema version
-    static let currentVersion = 1
+    static let currentVersion = 2
 
-    /// SQL to create the items table (version 1)
+    /// SQL to create the items table
     static let createItemsTable = """
         CREATE TABLE IF NOT EXISTS items (
             id TEXT PRIMARY KEY,
-            content TEXT NOT NULL,
+            summary TEXT NOT NULL,
             content_type TEXT NOT NULL,
             content_hash TEXT NOT NULL UNIQUE,
             timestamp INTEGER NOT NULL,
             source_app TEXT,
-            blob_path TEXT,
-            is_favorite INTEGER DEFAULT 0
+            content BLOB,
+            is_favorite INTEGER DEFAULT 0,
+            preview TEXT
         );
         """
 
@@ -68,7 +69,6 @@ enum DatabaseSchema {
     /// ```
     static let migrations: [Migration] = [
         // Future migrations go here
-        // Migration(fromVersion: 1, toVersion: 2, statements: [...])
     ]
 
     /// Get migrations needed to upgrade from a given version to current

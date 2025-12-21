@@ -135,9 +135,10 @@ class OverlayPanel: NSPanel {
             return true
 
         case .returnKey:
-            // Let Return pass through to TextField's onSubmit
-            // unless we want to handle it here directly
-            handleReturn()
+            // Check configured modifier for plain text paste
+            let plainTextModifier = PreferencesManager.shared.plainTextPasteModifier.modifierFlags
+            let asPlainText = modifiers.contains(plainTextModifier)
+            handleReturn(asPlainText: asPlainText)
             return true
 
         case .tab:
@@ -166,10 +167,10 @@ class OverlayPanel: NSPanel {
         }
     }
 
-    private func handleReturn() {
+    private func handleReturn(asPlainText: Bool = false) {
         guard let viewModel = viewModel else { return }
         Task { @MainActor in
-            viewModel.pasteSelected()
+            viewModel.pasteSelected(asPlainText: asPlainText)
         }
     }
 

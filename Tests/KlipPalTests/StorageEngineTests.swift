@@ -239,12 +239,13 @@ final class StorageEngineTests: XCTestCase {
     func testUpdateTimestampPreservesOtherFields() async throws {
         // Create item with all fields populated
         let hash = "preserve_fields_hash"
+        let testBlobContent = Data([0x01, 0x02, 0x03, 0x04])
         var item = ClipboardItem(
             content: "Test content",
             contentType: .url,
             contentHash: hash,
             sourceApp: "Safari",
-            blobPath: "/some/path"
+            blobContent: testBlobContent
         )
         item.isFavorite = true
 
@@ -254,8 +255,8 @@ final class StorageEngineTests: XCTestCase {
         // Update timestamp
         try await storage.updateTimestamp(forHash: hash)
 
-        // Fetch and verify all other fields are preserved
-        let items = try await storage.fetchItems(limit: nil, favoriteOnly: false)
+        // Fetch and verify all other fields are preserved (includeContent to check blob)
+        let items = try await storage.fetchItems(limit: nil, favoriteOnly: false, includeContent: true)
         XCTAssertEqual(items.count, 1)
         let updatedItem = items.first!
 
@@ -263,7 +264,7 @@ final class StorageEngineTests: XCTestCase {
         XCTAssertEqual(updatedItem.contentType, .url)
         XCTAssertEqual(updatedItem.contentHash, hash)
         XCTAssertEqual(updatedItem.sourceApp, "Safari")
-        XCTAssertEqual(updatedItem.blobPath, "/some/path")
+        XCTAssertEqual(updatedItem.blobContent, testBlobContent)
         XCTAssertTrue(updatedItem.isFavorite)
     }
 }
