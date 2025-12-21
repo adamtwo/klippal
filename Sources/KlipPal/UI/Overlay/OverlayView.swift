@@ -103,10 +103,7 @@ struct OverlayView: View {
                 pinnedCount: viewModel.pinnedCount,
                 onToggle: { viewModel.setShowingPinnedOnly($0) },
                 onSettings: {
-                    viewModel.closeWindow()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        PreferencesWindowController.show()
-                    }
+                    viewModel.openPreferences()
                 }
             )
 

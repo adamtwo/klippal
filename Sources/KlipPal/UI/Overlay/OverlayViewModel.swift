@@ -36,6 +36,9 @@ class OverlayViewModel: ObservableObject {
     /// Callback invoked to close the window
     var onCloseWindow: (() -> Void)?
 
+    /// Callback invoked to close and open preferences (handles race condition)
+    var onOpenPreferences: ((SettingsCategory) -> Void)?
+
     init(storage: SQLiteStorageEngine? = nil, preloadedItems: [ClipboardItem] = []) {
         // Get shared storage from AppDelegate
         self.storage = storage ?? AppDelegate.shared.storage!
@@ -403,6 +406,11 @@ class OverlayViewModel: ObservableObject {
     /// Close the overlay window
     func closeWindow() {
         onCloseWindow?()
+    }
+
+    /// Open preferences window (handles race condition with overlay closing)
+    func openPreferences(category: SettingsCategory = .general) {
+        onOpenPreferences?(category)
     }
 
     /// Delete an item from history

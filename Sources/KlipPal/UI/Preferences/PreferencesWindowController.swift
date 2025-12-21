@@ -25,21 +25,14 @@ class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     }
 
     static func show(category: SettingsCategory = .general) {
-        print("📋 PreferencesWindowController.show() called")
         if shared == nil {
-            print("📋 Creating new PreferencesWindowController")
             shared = PreferencesWindowController(initialCategory: category)
         } else if let window = shared?.window {
             // Update the content view to show the requested category
             window.contentView = NSHostingView(rootView: PreferencesView(initialCategory: category))
         }
 
-        guard let window = shared?.window else {
-            print("❌ Window is nil!")
-            return
-        }
-
-        print("📋 Making window key and ordering front")
+        guard let window = shared?.window else { return }
 
         // Center window
         window.center()
@@ -59,8 +52,6 @@ class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             window.level = .normal
         }
-
-        print("📋 Window frame: \(window.frame), isVisible: \(window.isVisible)")
     }
 
     // MARK: - NSWindowDelegate

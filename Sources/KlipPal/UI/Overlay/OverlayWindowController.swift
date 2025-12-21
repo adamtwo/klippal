@@ -7,6 +7,9 @@ class OverlayWindowController: NSWindowController {
     private var viewModel: OverlayViewModel?
     private var previousApp: NSRunningApplication?
 
+    /// Flag to suppress auto-close when intentionally opening preferences
+    private var suppressAutoClose = false
+
     // UserDefaults keys for persisting window size
     private static let windowWidthKey = "overlayWindowWidth"
     private static let windowHeightKey = "overlayWindowHeight"
@@ -72,6 +75,11 @@ class OverlayWindowController: NSWindowController {
             // Set callback to close window
             self.viewModel?.onCloseWindow = { [weak self] in
                 self?.closeWindow()
+            }
+
+            // Set callback to open preferences (handles race condition)
+            self.viewModel?.onOpenPreferences = { [weak self] category in
+                self?.closeAndOpenPreferences(category: category)
             }
 
             // Set panel's close callback to also restore previous app
@@ -140,6 +148,26 @@ class OverlayWindowController: NSWindowController {
         overlayPanel?.close()
     }
 
+    /// Close the overlay and open preferences window
+    /// This method suppresses the auto-close behavior to prevent race conditions
+    func closeAndOpenPreferences(category: SettingsCategory = .general) {
+        suppressAutoClose = true
+
+        // CRITICAL: Set activation policy to regular BEFORE closing the panel
+        // This prevents the app from entering a "prohibited" state when the last window closes
+        NSApp.setActivationPolicy(.regular)
+
+        overlayPanel?.close()
+
+        // Show preferences after a brief delay to let the overlay fully close
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            // Ensure app is active before showing window
+            NSApp.activate(ignoringOtherApps: true)
+            PreferencesWindowController.show(category: category)
+            self.suppressAutoClose = false
+        }
+    }
+
     var isVisible: Bool {
         overlayPanel?.isVisible ?? false
     }
@@ -165,6 +193,8 @@ extension OverlayWindowController: NSWindowDelegate {
     }
 
     func windowDidResignKey(_ notification: Notification) {
+        // Don't auto-close if we're intentionally opening preferences
+        if suppressAutoClose { return }
         // Close the overlay when it loses focus
         closeWindow()
     }
