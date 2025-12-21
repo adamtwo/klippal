@@ -33,21 +33,31 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
     // MARK: - Schema Setup and Migrations
 
     private func setupSchema() async throws {
-        // Create base tables if they don't exist
-        for sql in DatabaseSchema.initialSetupStatements {
-            try await execute(sql)
-        }
+        // First, ensure schema_version table exists so we can check the version
+        try await execute(DatabaseSchema.createVersionTable)
 
-        // Check current version and run migrations if needed
+        // Check current version
         let currentVersion = try await getSchemaVersion()
 
-        if currentVersion == 0 {
-            // New database - set initial version
+        if currentVersion == 1 {
+            // V1 database detected - run migration from v1 to v2
+            // This handles creating the new table, migrating data, and cleanup
+            let dbURL = URL(fileURLWithPath: dbPath)
+            let appSupportDir = dbURL.deletingLastPathComponent()
+            let blobDirectory = appSupportDir.appendingPathComponent("blobs")
+
+            try DatabaseMigrator.migrateV1ToV2(db: db, blobDirectory: blobDirectory)
+        } else if currentVersion == 0 {
+            // New database - create v2 schema fresh
+            for sql in DatabaseSchema.initialSetupStatements {
+                try await execute(sql)
+            }
             try await execute(DatabaseSchema.setVersion(DatabaseSchema.currentVersion))
         } else if currentVersion < DatabaseSchema.currentVersion {
-            // Existing database - run migrations
+            // Future migrations (v2 → v3, etc.) would go here
             try await runMigrations(from: currentVersion)
         }
+        // If currentVersion == DatabaseSchema.currentVersion, nothing to do
     }
 
     /// Get the current schema version from the database
