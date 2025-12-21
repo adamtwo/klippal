@@ -234,8 +234,12 @@ class OverlayViewModel: ObservableObject {
         return hasExact && hasFuzzy
     }
 
-    func pasteItem(_ item: ClipboardItem) {
-        print("Pasting item: \(item.content.prefix(50))...")
+    /// Paste an item from history
+    /// - Parameters:
+    ///   - item: The clipboard item to paste
+    ///   - asPlainText: If true, paste as plain text regardless of content type (Shift+Enter)
+    func pasteItem(_ item: ClipboardItem, asPlainText: Bool = false) {
+        print("Pasting item\(asPlainText ? " as plain text" : ""): \(item.content.prefix(50))...")
 
         // Update timestamp to bring item to top of history
         Task {
@@ -260,7 +264,7 @@ class OverlayViewModel: ObservableObject {
                 // Longer delay to allow window to close and app to switch
                 try await Task.sleep(nanoseconds: 200_000_000) // 200ms
                 print("Starting paste simulation...")
-                try await pasteManager.paste(item)
+                try await pasteManager.paste(item, asPlainText: asPlainText)
             } catch {
                 print("Failed to paste: \(error)")
             }
@@ -287,10 +291,12 @@ class OverlayViewModel: ObservableObject {
         scrollToSelection = filteredItems[selectedIndex].id
     }
 
-    func pasteSelected() {
+    /// Paste the currently selected item
+    /// - Parameter asPlainText: If true, paste as plain text regardless of content type (Shift+Enter)
+    func pasteSelected(asPlainText: Bool = false) {
         guard selectedIndex < filteredItems.count else { return }
         let item = filteredItems[selectedIndex]
-        pasteItem(item)
+        pasteItem(item, asPlainText: asPlainText)
     }
 
     /// Copy the selected item to the system clipboard (Cmd+C)

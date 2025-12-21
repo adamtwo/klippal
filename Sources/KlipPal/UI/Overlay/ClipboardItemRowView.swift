@@ -9,7 +9,8 @@ struct ClipboardItemRowView: View {
     var onDelete: (() -> Void)?
     var onToggleFavorite: (() -> Void)?
     var onSingleClick: (() -> Void)?
-    var onDoubleClick: (() -> Void)?
+    /// Called on double-click. Parameter is true if Shift was held (paste as plain text)
+    var onDoubleClick: ((_ asPlainText: Bool) -> Void)?
     var onLoadFullImage: (() async -> NSImage?)?
 
     @State private var isHoveringPreviewIcon = false
@@ -22,7 +23,7 @@ struct ClipboardItemRowView: View {
     /// Using .leading positions the popover to the left of the main window
     static let popoverArrowEdge: Edge = .leading
 
-    init(item: ClipboardItem, isSelected: Bool, highlightRanges: [NSRange] = [], thumbnailImage: NSImage? = nil, onDelete: (() -> Void)? = nil, onToggleFavorite: (() -> Void)? = nil, onSingleClick: (() -> Void)? = nil, onDoubleClick: (() -> Void)? = nil, onLoadFullImage: (() async -> NSImage?)? = nil) {
+    init(item: ClipboardItem, isSelected: Bool, highlightRanges: [NSRange] = [], thumbnailImage: NSImage? = nil, onDelete: (() -> Void)? = nil, onToggleFavorite: (() -> Void)? = nil, onSingleClick: (() -> Void)? = nil, onDoubleClick: ((_ asPlainText: Bool) -> Void)? = nil, onLoadFullImage: (() async -> NSImage?)? = nil) {
         self.item = item
         self.isSelected = isSelected
         self.highlightRanges = highlightRanges
@@ -174,7 +175,10 @@ struct ClipboardItemRowView: View {
                 }
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) {
-                    onDoubleClick?()
+                    // Check configured modifier for paste-as-plain-text
+                    let plainTextModifier = PreferencesManager.shared.plainTextPasteModifier.modifierFlags
+                    let asPlainText = NSEvent.modifierFlags.contains(plainTextModifier)
+                    onDoubleClick?(asPlainText)
                 }
                 .simultaneousGesture(
                     TapGesture(count: 1).onEnded {

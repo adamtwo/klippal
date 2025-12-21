@@ -12,8 +12,11 @@ class PasteManager {
     }
 
     /// Paste an item by restoring it to clipboard and simulating Cmd+V
-    func paste(_ item: ClipboardItem) async throws {
-        print("📋 Restoring item to clipboard...")
+    /// - Parameters:
+    ///   - item: The clipboard item to paste
+    ///   - asPlainText: If true, paste only the plain text content regardless of content type
+    func paste(_ item: ClipboardItem, asPlainText: Bool = false) async throws {
+        print("📋 Restoring item to clipboard\(asPlainText ? " as plain text" : "")...")
 
         // Check accessibility permissions
         let trusted = AXIsProcessTrusted()
@@ -24,15 +27,43 @@ class PasteManager {
             print("⚠️ Please grant permissions in System Settings > Privacy & Security > Accessibility")
         }
 
+        // Restore to clipboard
+        try await restoreToClipboard(item, asPlainText: asPlainText)
+
+        print("📋 Clipboard updated, waiting 500ms before simulating Cmd+V...")
+
+        // Even longer delay to ensure app has focus
+        try await Task.sleep(nanoseconds: 500_000_000) // 500ms
+
+        // Simulate Cmd+V
+        simulateCmdV()
+    }
+
+    /// Restore an item to the system clipboard without simulating paste
+    /// - Parameters:
+    ///   - item: The clipboard item to restore
+    ///   - asPlainText: If true, restore only the plain text content regardless of content type
+    func restoreToClipboard(_ item: ClipboardItem, asPlainText: Bool = false) async throws {
         // Fetch blob content if not already loaded
         var blobContent = item.blobContent
         if blobContent == nil, let storage = storage ?? AppDelegate.shared.storage {
             blobContent = try await storage.fetchBlobContent(byHash: item.contentHash)
         }
 
+        // Tell clipboard monitor to skip this change (we're pasting, not copying)
+        AppDelegate.shared?.skipNextClipboardChange()
+
         // Restore item to system clipboard
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
+
+        // If pasting as plain text, always use plain text regardless of content type
+        if asPlainText {
+            let plainText = getPlainTextContent(from: item, blobContent: blobContent)
+            pasteboard.setString(plainText, forType: .string)
+            print("📋 Restored as plain text: \(plainText.prefix(50))...")
+            return
+        }
 
         switch item.contentType {
         case .image:
@@ -93,14 +124,34 @@ class PasteManager {
                 pasteboard.setString(item.content, forType: .string)
             }
         }
+    }
 
-        print("📋 Clipboard updated, waiting 500ms before simulating Cmd+V...")
+    /// Extract plain text content from a clipboard item
+    private func getPlainTextContent(from item: ClipboardItem, blobContent: Data?) -> String {
+        switch item.contentType {
+        case .richText:
+            // Try to extract plain text from rich text blob
+            if let blobContent = blobContent {
+                if let attributed = NSAttributedString(rtf: blobContent, documentAttributes: nil) {
+                    return attributed.string
+                } else if let attributed = NSAttributedString(html: blobContent, documentAttributes: nil) {
+                    return attributed.string
+                }
+            }
+            return item.content
 
-        // Even longer delay to ensure app has focus
-        try await Task.sleep(nanoseconds: 500_000_000) // 500ms
+        case .text, .url:
+            // For text/URL, prefer full content from blob if available
+            if let blobContent = blobContent,
+               let fullText = String(data: blobContent, encoding: .utf8) {
+                return fullText
+            }
+            return item.content
 
-        // Simulate Cmd+V
-        simulateCmdV()
+        case .image, .fileURL:
+            // For images and files, return the content description/path
+            return item.content
+        }
     }
 
     /// Simulate Cmd+V keypress using CGEvent

@@ -174,9 +174,9 @@ struct OverlayView: View {
                                     onSingleClick: {
                                         viewModel.selectedIndex = index
                                     },
-                                    onDoubleClick: {
+                                    onDoubleClick: { asPlainText in
                                         viewModel.selectedIndex = index
-                                        pasteItem(item)
+                                        pasteItem(item, asPlainText: asPlainText)
                                     },
                                     onLoadFullImage: {
                                         await viewModel.loadFullImage(for: item)
@@ -279,8 +279,8 @@ struct OverlayView: View {
         pasteItem(item)
     }
 
-    private func pasteItem(_ item: ClipboardItem) {
-        viewModel.pasteItem(item)
+    private func pasteItem(_ item: ClipboardItem, asPlainText: Bool = false) {
+        viewModel.pasteItem(item, asPlainText: asPlainText)
     }
 }
 

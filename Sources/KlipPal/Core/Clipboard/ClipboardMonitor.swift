@@ -22,6 +22,15 @@ class ClipboardMonitor: ObservableObject {
     /// Maximum image size to store (10MB)
     private let maxImageSize: Int = 10 * 1024 * 1024
 
+    /// Flag to temporarily skip monitoring (set during paste operations)
+    private var skipNextChange: Bool = false
+
+    /// Temporarily skip monitoring the next clipboard change
+    /// Used when we're restoring content to clipboard for pasting
+    func skipNextClipboardChange() {
+        skipNextChange = true
+    }
+
     init(storage: StorageEngineProtocol, excludedAppsManager: ExcludedAppsManager? = nil) {
         self.storage = storage
         self.deduplicator = ClipboardDeduplicator(storage: storage)
@@ -58,6 +67,13 @@ class ClipboardMonitor: ObservableObject {
         guard currentChangeCount != changeCount else { return }
 
         changeCount = currentChangeCount
+
+        // Skip if we're in a paste operation (our own clipboard modification)
+        if skipNextChange {
+            skipNextChange = false
+            print("⏭️ Skipping clipboard change from paste operation")
+            return
+        }
 
         // Get source application first to check exclusion
         let sourceApp = ClipboardContentExtractor.getFrontmostApp()

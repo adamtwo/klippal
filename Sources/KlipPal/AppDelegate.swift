@@ -116,4 +116,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             print("Failed to re-register global hotkey")
         }
     }
+
+    /// Tell the clipboard monitor to skip the next clipboard change
+    /// Used when pasting from history to avoid re-capturing our own paste
+    @MainActor
+    func skipNextClipboardChange() {
+        clipboardMonitor?.skipNextClipboardChange()
+    }
 }
