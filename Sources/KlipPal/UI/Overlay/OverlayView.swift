@@ -168,7 +168,7 @@ struct OverlayView: View {
                                     item: item,
                                     isSelected: index == viewModel.selectedIndex,
                                     highlightRanges: viewModel.matchedRanges(at: index),
-                                    thumbnailImage: viewModel.thumbnail(for: item),
+                                    thumbnailImage: viewModel.thumbnailCache[item.contentHash],
                                     onDelete: { viewModel.deleteItem(item) },
                                     onToggleFavorite: { viewModel.toggleFavorite(item) },
                                     onSingleClick: {
@@ -269,7 +269,6 @@ struct OverlayView: View {
             }
         }
         .onChange(of: isSearchFieldFocused) { newValue in
-            print("🔍 Search field focus changed: \(newValue)")
             viewModel.isSearchFieldFocused = newValue
         }
     }

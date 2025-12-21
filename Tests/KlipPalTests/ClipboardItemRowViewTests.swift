@@ -370,6 +370,103 @@ final class ClipboardItemRowViewTests: XCTestCase {
         XCTAssertEqual(scaled.height, maxPreviewSize)
     }
 
+    // MARK: - Popover Lazy Loading Tests
+
+    func testPopoverLoadsFullTextFromStorageWhenBlobIsNil() async throws {
+        // Create a temporary database
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempDBPath = tempDir.appendingPathComponent("test_popover_\(UUID().uuidString).db").path
+        let storage = try await SQLiteStorageEngine(dbPath: tempDBPath)
+
+        defer {
+            try? FileManager.default.removeItem(atPath: tempDBPath)
+        }
+
+        // Create item with 500 char content in blob
+        let fullText = String(repeating: "x", count: 500)
+        let truncatedContent = String(fullText.prefix(100))
+        let blobData = fullText.data(using: .utf8)!
+
+        let item = ClipboardItem(
+            content: truncatedContent,
+            contentType: .text,
+            contentHash: "popover_test_hash",
+            blobContent: blobData
+        )
+
+        // Save to storage
+        try await storage.save(item)
+
+        // Create item WITHOUT blob (simulating lazy loading)
+        let lazyItem = ClipboardItem(
+            content: truncatedContent,
+            contentType: .text,
+            contentHash: "popover_test_hash",
+            blobContent: nil // No blob loaded
+        )
+
+        // Verify fullContent returns only summary when blob is nil
+        XCTAssertEqual(lazyItem.fullContent, truncatedContent,
+            "Without blob, fullContent should return summary (100 chars)")
+
+        // Fetch blob from storage
+        let fetchedBlob = try await storage.fetchBlobContent(byHash: lazyItem.contentHash)
+        XCTAssertNotNil(fetchedBlob, "Should be able to fetch blob from storage")
+
+        // Verify fetched blob contains full content
+        let fetchedText = String(data: fetchedBlob!, encoding: .utf8)!
+        XCTAssertEqual(fetchedText.count, 500, "Fetched blob should contain full 500 chars")
+        XCTAssertEqual(fetchedText, fullText, "Fetched text should match original")
+    }
+
+    func testPopoverShowsUpTo1000CharsFromFetchedBlob() async throws {
+        // Create a temporary database
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempDBPath = tempDir.appendingPathComponent("test_popover_1000_\(UUID().uuidString).db").path
+        let storage = try await SQLiteStorageEngine(dbPath: tempDBPath)
+
+        defer {
+            try? FileManager.default.removeItem(atPath: tempDBPath)
+        }
+
+        // Create item with 2000 char content in blob
+        let fullText = String(repeating: "y", count: 2000)
+        let truncatedContent = String(fullText.prefix(100))
+        let blobData = fullText.data(using: .utf8)!
+
+        let item = ClipboardItem(
+            content: truncatedContent,
+            contentType: .text,
+            contentHash: "popover_1000_test_hash",
+            blobContent: blobData
+        )
+
+        // Save to storage
+        try await storage.save(item)
+
+        // Fetch blob from storage (simulating what loadFullText does)
+        let fetchedBlob = try await storage.fetchBlobContent(byHash: item.contentHash)
+        XCTAssertNotNil(fetchedBlob)
+
+        let fetchedText = String(data: fetchedBlob!, encoding: .utf8)!
+
+        // Verify fetched text is full 2000 chars
+        XCTAssertEqual(fetchedText.count, 2000, "Fetched blob should contain full 2000 chars")
+
+        // Simulate TextPreviewPopover truncation
+        let maxPreviewChars = 1000
+        let previewText: String
+        if fetchedText.count > maxPreviewChars {
+            previewText = String(fetchedText.prefix(maxPreviewChars)) + "..."
+        } else {
+            previewText = fetchedText
+        }
+
+        // The popover should show 1000 chars (not 100 from summary!)
+        XCTAssertEqual(previewText.count, 1003, "Popover should show 1000 chars + '...'")
+        XCTAssertTrue(previewText.count > 100, "Popover must show more than summary's 100 chars")
+    }
+
     // MARK: - Helper Methods
 
     /// Replicates the shouldShowPreviewPopover logic from ClipboardItemRowView

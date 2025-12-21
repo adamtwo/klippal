@@ -74,13 +74,14 @@ struct ClipboardItemRowView: View {
                 .onHover { hovering in
                     guard shouldShowPreviewPopover else { return }
                     isHoveringPreviewIcon = hovering
-                    // Pre-load content when hovering starts
+                    // Pre-load content when hovering starts (only for async content)
                     if hovering {
                         if item.contentType == .image && fullImage == nil && !isLoadingFullImage {
                             loadFullImageAsync()
                         } else if item.contentType == .url && urlPreview == nil && !isLoadingURLPreview {
                             loadURLPreviewAsync()
                         }
+                        // Text preview is now pre-computed and stored in item.previewContent
                     }
                 }
                 .onTapGesture {
@@ -101,8 +102,9 @@ struct ClipboardItemRowView: View {
                             isLoading: isLoadingURLPreview
                         )
                     } else {
+                        // Use pre-computed preview content (stored in database)
                         TextPreviewPopover(
-                            content: item.fullContent,
+                            content: item.previewContent ?? item.content,
                             characterCount: item.formattedCharacterCount
                         )
                     }
@@ -569,6 +571,7 @@ struct ImagePreviewPopover: View {
 struct TextPreviewPopover: View {
     let content: String
     let characterCount: String
+    var isLoading: Bool = false
 
     /// Width for the preview text area
     private let textWidth: CGFloat = 380
@@ -579,31 +582,46 @@ struct TextPreviewPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ScrollView {
-                Text(previewText)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundColor(.primary)
-                    .textSelection(.enabled)
-                    .lineLimit(nil)
-                    .frame(width: textWidth, alignment: .leading)
-            }
-            .frame(width: textWidth)
-            .frame(maxHeight: maxHeight)
-
-            HStack {
-                Text(characterCount)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                if content.count > maxPreviewChars {
-                    Text("• showing first \(maxPreviewChars) chars")
-                        .font(.caption)
-                        .foregroundColor(.orange)
+            if isLoading {
+                HStack {
+                    Spacer()
+                    VStack(spacing: 8) {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Loading content...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
                 }
+                .frame(width: textWidth, height: 100)
+            } else {
+                ScrollView {
+                    Text(previewText)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(.primary)
+                        .textSelection(.enabled)
+                        .lineLimit(nil)
+                        .frame(width: textWidth, alignment: .leading)
+                }
+                .frame(width: textWidth)
+                .frame(maxHeight: maxHeight)
 
-                Spacer()
+                HStack {
+                    Text(characterCount)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    if content.count > maxPreviewChars {
+                        Text("• showing first \(maxPreviewChars) chars")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+
+                    Spacer()
+                }
+                .frame(width: textWidth)
             }
-            .frame(width: textWidth)
         }
         .padding(12)
     }

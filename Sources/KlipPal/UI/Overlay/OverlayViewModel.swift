@@ -28,6 +28,7 @@ class OverlayViewModel: ObservableObject {
     private let pasteManager: PasteManager
     private let searchEngine = SearchEngine()
     private var notificationObserver: Any?
+    private var historyClearedObserver: Any?
 
     /// Callback invoked before pasting (to close window and restore previous app)
     var onBeforePaste: (() -> Void)?
@@ -71,10 +72,25 @@ class OverlayViewModel: ObservableObject {
                 }
             }
         }
+
+        // Observe history cleared - clear local list
+        historyClearedObserver = NotificationCenter.default.addObserver(
+            forName: .clipboardHistoryCleared,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            Task { @MainActor [weak self] in
+                self?.clearLocalItems()
+            }
+        }
     }
 
     deinit {
         if let observer = notificationObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = historyClearedObserver {
             NotificationCenter.default.removeObserver(observer)
         }
     }
@@ -129,19 +145,21 @@ class OverlayViewModel: ObservableObject {
     private func loadThumbnails(for items: [ClipboardItem]) {
         for item in items where item.contentType == .image {
             // Skip if already cached
-            if thumbnailCache[item.contentHash] != nil { continue }
+            if thumbnailCache[item.contentHash] != nil {
+                continue
+            }
 
             // Generate thumbnail from blob content (fetch lazily if needed)
-            Task {
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+
                 var blobContent = item.blobContent
                 if blobContent == nil {
-                    blobContent = try? await storage.fetchBlobContent(byHash: item.contentHash)
+                    blobContent = try? await self.storage.fetchBlobContent(byHash: item.contentHash)
                 }
                 if let blobContent = blobContent {
                     if let thumbnail = ThumbnailGenerator.generateThumbnail(from: blobContent, maxSize: 80) {
-                        await MainActor.run {
-                            thumbnailCache[item.contentHash] = thumbnail
-                        }
+                        self.thumbnailCache[item.contentHash] = thumbnail
                     }
                 }
             }
@@ -224,6 +242,11 @@ class OverlayViewModel: ObservableObject {
             do {
                 try await storage.updateTimestamp(forHash: item.contentHash)
                 print("Updated timestamp for pasted item")
+
+                // Move item to top locally
+                await MainActor.run {
+                    moveItemToTop(item)
+                }
             } catch {
                 print("Failed to update timestamp: \(error)")
             }
@@ -331,6 +354,10 @@ class OverlayViewModel: ObservableObject {
             do {
                 try await storage.updateTimestamp(forHash: item.contentHash)
                 print("Updated timestamp for copied item")
+
+                // Move item to top locally (avoid full database reload)
+                moveItemToTop(item)
+                selectedIndex = 0
             } catch {
                 print("Failed to update timestamp: \(error)")
             }
@@ -340,6 +367,31 @@ class OverlayViewModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 seconds
             showCopiedFeedback = false
         }
+    }
+
+    /// Move an item to the top of the list (after timestamp update)
+    private func moveItemToTop(_ item: ClipboardItem) {
+        // Update item with new timestamp (preserving all other fields)
+        var updatedItem = item
+        updatedItem = ClipboardItem(
+            id: item.id,
+            content: item.content,
+            contentType: item.contentType,
+            contentHash: item.contentHash,
+            timestamp: Date(),
+            sourceApp: item.sourceApp,
+            blobContent: item.blobContent,
+            blobSize: item.blobSize,
+            isFavorite: item.isFavorite,
+            previewContent: item.previewContent
+        )
+
+        // Remove from current position and insert at top
+        items.removeAll { $0.id == item.id }
+        items.insert(updatedItem, at: 0)
+
+        // Re-apply filters to update filteredItems
+        applyFilters()
     }
 
     /// Close the overlay window
@@ -368,6 +420,17 @@ class OverlayViewModel: ObservableObject {
         }
     }
 
+    /// Clear all local items (called when history is cleared from preferences)
+    private func clearLocalItems() {
+        items.removeAll()
+        filteredItems.removeAll()
+        searchResults.removeAll()
+        thumbnailCache.removeAll()
+        fullImageCache.removeAll()
+        selectedIndex = 0
+        print("✅ Local items cleared")
+    }
+
     // MARK: - Pinned Items
 
     /// Number of pinned (favorite) items
@@ -379,13 +442,15 @@ class OverlayViewModel: ObservableObject {
     func toggleFavorite(_ item: ClipboardItem) {
         Task {
             do {
-                // Create updated item with toggled favorite status
-                var updatedItem = item
-                updatedItem.isFavorite = !item.isFavorite
+                let newFavoriteStatus = !item.isFavorite
 
-                // Save to storage
-                try await storage.save(updatedItem)
-                print("Toggled favorite for: \(item.content.prefix(50))... -> \(updatedItem.isFavorite)")
+                // Update only the favorite field (preserves blob content)
+                try await storage.updateFavoriteStatus(forHash: item.contentHash, isFavorite: newFavoriteStatus)
+                print("Toggled favorite for: \(item.content.prefix(50))... -> \(newFavoriteStatus)")
+
+                // Create updated item for local state
+                var updatedItem = item
+                updatedItem.isFavorite = newFavoriteStatus
 
                 // Update in local arrays
                 if let index = items.firstIndex(where: { $0.id == item.id }) {

@@ -5,7 +5,7 @@ enum DatabaseSchema {
     /// Current schema version
     static let currentVersion = 1
 
-    /// SQL to create the items table (version 1)
+    /// SQL to create the items table
     static let createItemsTable = """
         CREATE TABLE IF NOT EXISTS items (
             id TEXT PRIMARY KEY,
@@ -15,7 +15,8 @@ enum DatabaseSchema {
             timestamp INTEGER NOT NULL,
             source_app TEXT,
             content BLOB,
-            is_favorite INTEGER DEFAULT 0
+            is_favorite INTEGER DEFAULT 0,
+            preview TEXT
         );
         """
 
@@ -68,7 +69,6 @@ enum DatabaseSchema {
     /// ```
     static let migrations: [Migration] = [
         // Future migrations go here
-        // Migration(fromVersion: 1, toVersion: 2, statements: [...])
     ]
 
     /// Get migrations needed to upgrade from a given version to current

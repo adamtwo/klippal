@@ -41,11 +41,12 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
         // Check current version and run migrations if needed
         let currentVersion = try await getSchemaVersion()
 
-        if currentVersion < DatabaseSchema.currentVersion {
-            try await runMigrations(from: currentVersion)
-        } else if currentVersion == 0 {
+        if currentVersion == 0 {
             // New database - set initial version
             try await execute(DatabaseSchema.setVersion(DatabaseSchema.currentVersion))
+        } else if currentVersion < DatabaseSchema.currentVersion {
+            // Existing database - run migrations
+            try await runMigrations(from: currentVersion)
         }
     }
 
@@ -95,8 +96,8 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
 
     func save(_ item: ClipboardItem) async throws {
         let sql = """
-            INSERT OR REPLACE INTO items (id, summary, content_type, content_hash, timestamp, source_app, content, is_favorite)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+            INSERT OR REPLACE INTO items (id, summary, content_type, content_hash, timestamp, source_app, content, is_favorite, preview)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
             """
 
         var statement: OpaquePointer?
@@ -126,6 +127,11 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
             sqlite3_bind_null(statement, 7)
         }
         sqlite3_bind_int(statement, 8, item.isFavorite ? 1 : 0)
+        if let previewContent = item.previewContent {
+            sqlite3_bind_text(statement, 9, (previewContent as NSString).utf8String, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(statement, 9)
+        }
 
         guard sqlite3_step(statement) == SQLITE_DONE else {
             throw StorageError.executeFailed(message: String(cString: sqlite3_errmsg(db)))
@@ -136,9 +142,9 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
         // By default, exclude blob content for list display - use length(content) for size
         var sql: String
         if includeContent {
-            sql = "SELECT id, summary, content_type, content_hash, timestamp, source_app, content, is_favorite FROM items"
+            sql = "SELECT id, summary, content_type, content_hash, timestamp, source_app, content, is_favorite, preview FROM items"
         } else {
-            sql = "SELECT id, summary, content_type, content_hash, timestamp, source_app, length(content), is_favorite FROM items"
+            sql = "SELECT id, summary, content_type, content_hash, timestamp, source_app, length(content), is_favorite, preview FROM items"
         }
 
         if favoriteOnly {
@@ -230,6 +236,27 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
         let now = Int64(Date().timeIntervalSince1970)
 
         sqlite3_bind_int64(statement, 1, now)
+        sqlite3_bind_text(statement, 2, (hash as NSString).utf8String, -1, SQLITE_TRANSIENT)
+
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw StorageError.executeFailed(message: String(cString: sqlite3_errmsg(db)))
+        }
+    }
+
+    /// Update only the favorite status without modifying other fields (especially blob content)
+    func updateFavoriteStatus(forHash hash: String, isFavorite: Bool) async throws {
+        let sql = "UPDATE items SET is_favorite = ? WHERE content_hash = ?;"
+
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(message: String(cString: sqlite3_errmsg(db)))
+        }
+
+        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+        sqlite3_bind_int(statement, 1, isFavorite ? 1 : 0)
         sqlite3_bind_text(statement, 2, (hash as NSString).utf8String, -1, SQLITE_TRANSIENT)
 
         guard sqlite3_step(statement) == SQLITE_DONE else {
@@ -343,6 +370,8 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
 
         let isFavorite = sqlite3_column_int(statement, 7) == 1
 
+        let previewContent = sqlite3_column_text(statement, 8).map { String(cString: $0) }
+
         return ClipboardItem(
             id: id,
             content: content,
@@ -351,12 +380,13 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
             timestamp: timestamp,
             sourceApp: sourceApp,
             blobContent: blobContent,
-            isFavorite: isFavorite
+            isFavorite: isFavorite,
+            previewContent: previewContent
         )
     }
 
     /// Parse a ClipboardItem without blob content (for list display)
-    /// Column order: id, summary, content_type, content_hash, timestamp, source_app, length(content), is_favorite
+    /// Column order: id, summary, content_type, content_hash, timestamp, source_app, length(content), is_favorite, preview
     private func parseClipboardItemWithoutBlob(from statement: OpaquePointer?) -> ClipboardItem? {
         guard let statement = statement else { return nil }
 
@@ -379,6 +409,8 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
 
         let isFavorite = sqlite3_column_int(statement, 7) == 1
 
+        let previewContent = sqlite3_column_text(statement, 8).map { String(cString: $0) }
+
         return ClipboardItem(
             id: id,
             content: content,
@@ -388,7 +420,8 @@ actor SQLiteStorageEngine: StorageEngineProtocol {
             sourceApp: sourceApp,
             blobContent: nil,
             blobSize: blobSize,
-            isFavorite: isFavorite
+            isFavorite: isFavorite,
+            previewContent: previewContent
         )
     }
 

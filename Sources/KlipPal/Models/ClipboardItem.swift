@@ -29,6 +29,9 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
     /// Whether this item is pinned/favorited
     var isFavorite: Bool
 
+    /// Pre-computed preview content for popover display (up to 1000 chars for text)
+    var previewContent: String?
+
     init(
         id: UUID = UUID(),
         content: String,
@@ -38,7 +41,8 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
         sourceApp: String? = nil,
         blobContent: Data? = nil,
         blobSize: Int? = nil,
-        isFavorite: Bool = false
+        isFavorite: Bool = false,
+        previewContent: String? = nil
     ) {
         self.id = id
         self.content = content
@@ -49,6 +53,7 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
         self.blobContent = blobContent
         self.blobSize = blobSize ?? blobContent?.count
         self.isFavorite = isFavorite
+        self.previewContent = previewContent
     }
 
     /// Maximum characters shown in preview

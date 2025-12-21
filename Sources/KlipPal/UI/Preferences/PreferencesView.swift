@@ -86,6 +86,8 @@ struct PreferencesView: View {
                 print("✅ Clipboard history cleared")
                 await MainActor.run {
                     itemCount = 0
+                    // Notify observers that history was cleared
+                    NotificationCenter.default.post(name: .clipboardHistoryCleared, object: nil)
                 }
             }
         }

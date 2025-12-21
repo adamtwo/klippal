@@ -21,6 +21,12 @@ protocol StorageEngineProtocol: Actor {
     /// Update the timestamp of an item by its hash to the current time
     func updateTimestamp(forHash hash: String) async throws
 
+    /// Update only the favorite status without modifying other fields
+    func updateFavoriteStatus(forHash hash: String, isFavorite: Bool) async throws
+
+    /// Fetch blob content for an item by its content hash (for paste operations)
+    func fetchBlobContent(byHash hash: String) async throws -> Data?
+
     /// Update an existing item (e.g., to toggle favorite)
     func update(_ item: ClipboardItem) async throws
 

@@ -3,6 +3,7 @@ import Foundation
 
 extension Notification.Name {
     static let clipboardItemAdded = Notification.Name("clipboardItemAdded")
+    static let clipboardHistoryCleared = Notification.Name("clipboardHistoryCleared")
 }
 
 /// Monitors the system clipboard for changes
@@ -93,14 +94,19 @@ class ClipboardMonitor: ObservableObject {
             blobContent = content.data(using: .utf8)
         }
 
-        // Create clipboard item (truncate text content to 100 chars for preview)
+        // Create clipboard item (truncate text content to 100 chars for summary)
         let truncatedContent = type == .image ? content : String(content.prefix(100))
+
+        // Generate preview content (up to 1000 chars for popover display)
+        let previewContent = generatePreviewContent(content: content, type: type, blobData: blobContent)
+
         let item = ClipboardItem(
             content: truncatedContent,
             contentType: type,
             contentHash: hash,
             sourceApp: sourceApp,
-            blobContent: blobContent
+            blobContent: blobContent,
+            previewContent: previewContent
         )
 
         // Save to storage
@@ -112,6 +118,45 @@ class ClipboardMonitor: ObservableObject {
             NotificationCenter.default.post(name: .clipboardItemAdded, object: item)
         } catch {
             print("❌ Failed to save clipboard item: \(error)")
+        }
+    }
+
+    /// Generate preview content for popover display (up to 1000 chars)
+    private func generatePreviewContent(content: String, type: ClipboardContentType, blobData: Data?) -> String? {
+        let previewLimit = 1000
+
+        switch type {
+        case .text, .url:
+            // For plain text and URLs, take first 1000 chars
+            if content.count <= previewLimit {
+                return content
+            }
+            return String(content.prefix(previewLimit))
+
+        case .richText:
+            // For rich text, extract plain text from RTF/HTML
+            guard let blobData = blobData else {
+                return String(content.prefix(previewLimit))
+            }
+
+            // Try RTF first
+            if let attributed = NSAttributedString(rtf: blobData, documentAttributes: nil) {
+                let plainText = attributed.string
+                return String(plainText.prefix(previewLimit))
+            }
+
+            // Try HTML
+            if let attributed = NSAttributedString(html: blobData, documentAttributes: nil) {
+                let plainText = attributed.string
+                return String(plainText.prefix(previewLimit))
+            }
+
+            // Fallback to content
+            return String(content.prefix(previewLimit))
+
+        case .image, .fileURL:
+            // For images and files, use the content description (already descriptive)
+            return nil
         }
     }
 

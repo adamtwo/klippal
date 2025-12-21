@@ -18,18 +18,20 @@ struct ClipboardContentExtractor {
             return richTextResult
         }
 
-        // Try to get string content
-        if let string = pasteboard.string(forType: .string) {
-            let type = determineType(for: string)
-            return (string, type, nil)
-        }
-
-        // Try to get image data (check multiple formats)
+        // Check for image BEFORE string - images take priority
+        // This fixes an issue where copying an image from history would
+        // be detected as text if any string representation exists
         if let imageData = extractImageData(from: pasteboard) {
             let dimensions = ThumbnailGenerator.getImageDimensions(from: imageData)
             let dimensionStr = dimensions.map { "\(Int($0.width))×\(Int($0.height))" } ?? "unknown size"
             let content = "[Image \(dimensionStr) copied at \(Date().formatted())]"
             return (content, .image, imageData)
+        }
+
+        // Try to get string content
+        if let string = pasteboard.string(forType: .string) {
+            let type = determineType(for: string)
+            return (string, type, nil)
         }
 
         return nil
@@ -117,25 +119,34 @@ struct ClipboardContentExtractor {
     }
 
     /// Extract image data from pasteboard, trying multiple formats
+    /// Always returns PNG data for consistency and smaller file sizes
     private static func extractImageData(from pasteboard: NSPasteboard) -> Data? {
         // Try PNG first (lossless, preferred)
         if let pngData = pasteboard.data(forType: .png) {
             return pngData
         }
 
-        // Try TIFF (common on macOS)
+        // Try TIFF (common on macOS) - convert to PNG for smaller size
         if let tiffData = pasteboard.data(forType: .tiff) {
-            return tiffData
+            return convertToPNG(tiffData)
         }
 
-        // Try to get NSImage and convert (handles many formats including JPEG)
+        // Try to get NSImage and convert to PNG
         if let images = pasteboard.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage],
            let image = images.first,
            let tiffData = image.tiffRepresentation {
-            return tiffData
+            return convertToPNG(tiffData)
         }
 
         return nil
+    }
+
+    /// Convert image data (TIFF or other) to PNG for consistent hashing and smaller storage
+    private static func convertToPNG(_ imageData: Data) -> Data? {
+        guard let imageRep = NSBitmapImageRep(data: imageData) else {
+            return imageData // Return original if can't convert
+        }
+        return imageRep.representation(using: .png, properties: [:]) ?? imageData
     }
 
     /// Determine content type from string
