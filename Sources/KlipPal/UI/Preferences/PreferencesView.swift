@@ -115,6 +115,15 @@ struct GeneralSettingsView: View {
             Section {
                 Toggle("Launch at login", isOn: $preferences.launchAtLogin)
                     .help("Automatically start KlipPal when you log in")
+
+                Toggle("Show in menu bar", isOn: $preferences.showMenuBarIcon)
+                    .help("Show KlipPal icon in the menu bar")
+
+                if !preferences.showMenuBarIcon {
+                    Text("Use \(preferences.hotkeyDescription) to access KlipPal")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
 
             Section {

@@ -49,6 +49,7 @@ final class PreferencesManager: ObservableObject {
         static let showInDock = "showInDock"
         static let fuzzySearchEnabled = "fuzzySearchEnabled"
         static let plainTextPasteModifier = "plainTextPasteModifier"
+        static let showMenuBarIcon = "showMenuBarIcon"
     }
 
     // MARK: - Default Values
@@ -113,6 +114,13 @@ final class PreferencesManager: ObservableObject {
         }
     }
 
+    /// Whether to show the menu bar icon (true by default)
+    @Published var showMenuBarIcon: Bool {
+        didSet {
+            UserDefaults.standard.set(showMenuBarIcon, forKey: Keys.showMenuBarIcon)
+        }
+    }
+
     // MARK: - Initialization
 
     private init() {
@@ -132,6 +140,13 @@ final class PreferencesManager: ObservableObject {
             plainTextPasteModifier = modifier
         } else {
             plainTextPasteModifier = Defaults.plainTextPasteModifier
+        }
+
+        // Load show menu bar icon (defaults to true)
+        if defaults.object(forKey: Keys.showMenuBarIcon) != nil {
+            showMenuBarIcon = defaults.bool(forKey: Keys.showMenuBarIcon)
+        } else {
+            showMenuBarIcon = true
         }
     }
 
@@ -174,6 +189,7 @@ final class PreferencesManager: ObservableObject {
         launchAtLogin = false
         fuzzySearchEnabled = false
         plainTextPasteModifier = Defaults.plainTextPasteModifier
+        showMenuBarIcon = true
     }
 
     // MARK: - Hotkey Helpers

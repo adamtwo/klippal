@@ -1,13 +1,15 @@
 import AppKit
 import SwiftUI
+import Combine
 
 /// Manages the menu bar status item
 /// Note: This class intentionally does NOT use @MainActor because NSMenu action dispatch
 /// doesn't work well with MainActor isolation. Instead, we dispatch to main manually where needed.
 class StatusBarController: NSObject, NSMenuDelegate {
-    private var statusItem: NSStatusItem?
+    private(set) var statusItem: NSStatusItem?
     private var overlayWindow: OverlayWindowController?
     private(set) var menu: NSMenu?  // Exposed for testing
+    private var cancellables = Set<AnyCancellable>()
 
     /// Track if preferences was opened (for testing)
     private(set) var preferencesOpenedCount: Int = 0
@@ -18,6 +20,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     override init() {
         super.init()
         setupStatusItem()
+        observePreferences()
     }
 
     /// Pre-create the overlay window controller with pre-loaded items
@@ -28,7 +31,43 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
+    private func observePreferences() {
+        // Observe showMenuBarIcon preference changes
+        DispatchQueue.main.async { [weak self] in
+            PreferencesManager.shared.$showMenuBarIcon
+                .dropFirst() // Skip initial value since we handle it in setupStatusItem
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] show in
+                    self?.updateVisibility(show: show)
+                }
+                .store(in: &self!.cancellables)
+        }
+    }
+
+    private func updateVisibility(show: Bool) {
+        if show {
+            if statusItem == nil {
+                createStatusItem()
+            }
+        } else {
+            if let item = statusItem {
+                NSStatusBar.system.removeStatusItem(item)
+                statusItem = nil
+                menu = nil
+            }
+        }
+    }
+
     private func setupStatusItem() {
+        // Check preference synchronously - must be on main thread
+        DispatchQueue.main.async { [weak self] in
+            guard PreferencesManager.shared.showMenuBarIcon else { return }
+            self?.createStatusItem()
+        }
+    }
+
+    private func createStatusItem() {
+        guard statusItem == nil else { return }
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         guard let button = statusItem?.button else { return }
