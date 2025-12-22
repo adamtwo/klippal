@@ -219,6 +219,14 @@ jobs:
             cat "${DMG_NAME}.sha256"
           done
 
+      - name: Generate Release Notes with Claude
+        if: ${{ !inputs.dryrun }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          chmod +x scripts/generate-release-notes.sh
+          ./scripts/generate-release-notes.sh claude-notes.md
+
       - name: Create GitHub Release
         if: ${{ !inputs.dryrun }}
         env:
@@ -226,22 +234,18 @@ jobs:
         run: |
           VERSION="${{ inputs.version }}"
 
-          # Generate changelog from commits since last release
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          # Read Claude-generated release notes
+          CLAUDE_NOTES=$(cat claude-notes.md 2>/dev/null || echo "## Functionality
 
-          if [ -n "$LAST_TAG" ]; then
-            echo "Generating changelog since $LAST_TAG..."
-            CHANGELOG=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s" --no-merges | grep -v "Generated with Claude Code" || true)
-          else
-            echo "No previous tag found, using recent commits..."
-            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges -20 | grep -v "Generated with Claude Code" || true)
-          fi
+          - See commit history for changes
 
-          # Create release notes with changelog and installation instructions
+          ## Behind The Scenes
+
+          - Various improvements")
+
+          # Create release notes with Claude content and installation instructions
           cat > release-notes.md << EOF
-          ## What's Changed
-
-          ${CHANGELOG:-No significant changes}
+          ${CLAUDE_NOTES}
 
           ---
 
