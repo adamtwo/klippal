@@ -12,6 +12,9 @@ on:
   workflow_dispatch:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     name: Build & Test (macOS ${{ matrix.macos }} - ${{ matrix.arch }})
