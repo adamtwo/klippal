@@ -1,4 +1,4 @@
-name: CodeQL
+name: CodeQL (Swift)
 
 on:
   push:
@@ -44,21 +44,3 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: swift
-
-  analyze-actions:
-    name: Analyze (actions)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: actions
-          queries: security-and-quality
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
-        with:
-          category: actions
