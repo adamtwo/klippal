@@ -9,7 +9,7 @@
         <string>KLIPPAL_BINARY_PATH</string>
     </array>
     <key>RunAtLoad</key>
-    <true/>
+    <false/>
     <key>KeepAlive</key>
     <false/>
     <key>StandardOutPath</key>
