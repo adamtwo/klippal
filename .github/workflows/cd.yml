@@ -46,7 +46,7 @@ jobs:
           ./scripts/create-app-bundle.sh ${{ inputs.version }} ${{ matrix.arch }}
 
       - name: Upload App Bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: KlipPal-${{ matrix.arch }}-app
           path: KlipPal.app
@@ -63,13 +63,13 @@ jobs:
           fetch-depth: 0  # Need full history for changelog generation
 
       - name: Download arm64 App Bundle
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: KlipPal-arm64-app
           path: KlipPal-arm64.app
 
       - name: Download x86_64 App Bundle
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: KlipPal-x86_64-app
           path: KlipPal-x86_64.app
