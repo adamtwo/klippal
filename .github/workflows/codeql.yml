@@ -3,6 +3,10 @@ name: CodeQL
 on:
   push:
     branches: [main]
+    paths:
+      - 'Sources/**'
+      - 'Tests/**'
+      - 'Package.swift'
   schedule:
     - cron: "0 12 * * 1"  # Weekly on Monday at noon UTC
   workflow_dispatch:
