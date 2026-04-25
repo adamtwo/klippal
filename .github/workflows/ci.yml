@@ -52,6 +52,9 @@ jobs:
       - name: Run tests
         run: swift test -v
 
+      - name: Run launch agent script tests
+        run: bash scripts/test-launch-agent.sh
+
   # Summary job that depends on all matrix jobs
   ci-success:
     name: CI Success
