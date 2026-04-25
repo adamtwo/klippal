@@ -57,6 +57,8 @@ xcodebuild test -scheme KlipPal -enableCodeCoverage YES
 
 ### Development Workflow
 
+- All code changes should happen on a feature branch. A feature branch must start with `feature/`
+
 **IMPORTANT: Accessibility Permissions Required**
 - This app needs Accessibility permissions to monitor clipboard and simulate paste
 - Each rebuild requires re-granting permissions (macOS treats debug builds as new apps)
