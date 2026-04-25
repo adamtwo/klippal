@@ -143,15 +143,15 @@ final class PreferencesTests: XCTestCase {
         let prefs = PreferencesManager.shared
         let initial = prefs.launchAtLogin
         defer {
-            // Always unregister on the way out — setting false + reconcile ensures
-            // both LaunchAgent plist and SMAppService are cleared even if the test fails.
             prefs.launchAtLogin = false
-            prefs.reconcileLaunchAtLogin()
             prefs.launchAtLogin = initial
         }
 
         prefs.launchAtLogin = true
-        // Template not present in test env — falls back gracefully (templateNotFound path)
+        // reconcileLaunchAtLogin() is non-destructive: if the state set by the
+        // launchAtLogin didSet is already consistent (one mechanism active), it
+        // leaves it alone. If neither is active (e.g. SMAppService also failed in
+        // test env), it attempts re-registration — should not crash either way.
         prefs.reconcileLaunchAtLogin()
     }
 

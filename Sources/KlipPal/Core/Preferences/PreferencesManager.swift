@@ -195,8 +195,27 @@ final class PreferencesManager: ObservableObject {
 
     /// Ensure only one launch mechanism is registered, matching the stored preference.
     /// Call once at startup to self-heal any state left by older code paths.
+    ///
+    /// Non-destructive: only acts when the state is actually wrong (duplicates present,
+    /// or preference is enabled but nothing is registered). A valid single registration
+    /// is left untouched so we don't destroy it just to recreate it.
     func reconcileLaunchAtLogin() {
-        updateLaunchAtLogin()
+        let launchAgentActive = launchAgent.isInstalled
+        var smServiceActive = false
+        if #available(macOS 13.0, *) {
+            smServiceActive = SMAppService.mainApp.status == .enabled
+        }
+
+        if launchAgentActive && smServiceActive {
+            // Both mechanisms registered simultaneously — remove the SMAppService
+            // duplicate and keep only the LaunchAgent (more reliable for bare binaries).
+            clearSMAppService()
+            print("Removed duplicate SMAppService registration (kept LaunchAgent)")
+        } else if launchAtLogin && !launchAgentActive && !smServiceActive {
+            // Preference says enabled but nothing is actually registered — re-register.
+            updateLaunchAtLogin()
+        }
+        // Single-mechanism or both-off states are already correct; leave them alone.
     }
 
     /// Check current launch at login status from system
