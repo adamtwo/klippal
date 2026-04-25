@@ -155,34 +155,48 @@ final class PreferencesManager: ObservableObject {
     private let launchAgent = LaunchAgentManager()
 
     private func updateLaunchAtLogin() {
+        // Always clear both mechanisms first to prevent duplicate launches.
+        // If both were somehow registered (e.g. from a previous code path),
+        // disabling one while the other remains would still start two instances.
+        clearSMAppService()
+        try? launchAgent.uninstall()
+
+        guard launchAtLogin else {
+            print("✅ Unregistered from launch at login")
+            return
+        }
+
         do {
-            if launchAtLogin {
-                try launchAgent.install()
-                print("✅ Registered for launch at login")
-            } else {
-                try launchAgent.uninstall()
-                print("✅ Unregistered from launch at login")
-            }
+            try launchAgent.install()
+            print("✅ Registered for launch at login via LaunchAgent")
         } catch LaunchAgentError.templateNotFound {
             print("⚠️ LaunchAgent template not found, falling back to SMAppService")
-            updateViaSMAppService()
+            registerViaSMAppService()
         } catch {
-            print("⚠️ Failed to update launch at login: \(error)")
+            print("⚠️ Failed to register launch at login: \(error)")
         }
     }
 
-    private func updateViaSMAppService() {
+    private func registerViaSMAppService() {
         if #available(macOS 13.0, *) {
             do {
-                if launchAtLogin {
-                    try SMAppService.mainApp.register()
-                } else {
-                    try SMAppService.mainApp.unregister()
-                }
+                try SMAppService.mainApp.register()
             } catch {
                 print("⚠️ SMAppService fallback failed: \(error)")
             }
         }
+    }
+
+    private func clearSMAppService() {
+        if #available(macOS 13.0, *) {
+            try? SMAppService.mainApp.unregister()
+        }
+    }
+
+    /// Ensure only one launch mechanism is registered, matching the stored preference.
+    /// Call once at startup to self-heal any state left by older code paths.
+    func reconcileLaunchAtLogin() {
+        updateLaunchAtLogin()
     }
 
     /// Check current launch at login status from system

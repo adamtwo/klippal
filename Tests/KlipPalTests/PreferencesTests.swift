@@ -123,6 +123,38 @@ final class PreferencesTests: XCTestCase {
         XCTAssertFalse(prefs.fuzzySearchEnabled)
     }
 
+    // MARK: - reconcileLaunchAtLogin
+
+    @MainActor
+    func testReconcileLaunchAtLoginDoesNotCrashWhenDisabled() async throws {
+        let prefs = PreferencesManager.shared
+        let initial = prefs.launchAtLogin
+        defer {
+            prefs.launchAtLogin = initial
+            prefs.reconcileLaunchAtLogin()
+        }
+
+        prefs.launchAtLogin = false
+        prefs.reconcileLaunchAtLogin()
+    }
+
+    @MainActor
+    func testReconcileLaunchAtLoginDoesNotCrashWhenEnabled() async throws {
+        let prefs = PreferencesManager.shared
+        let initial = prefs.launchAtLogin
+        defer {
+            // Always unregister on the way out — setting false + reconcile ensures
+            // both LaunchAgent plist and SMAppService are cleared even if the test fails.
+            prefs.launchAtLogin = false
+            prefs.reconcileLaunchAtLogin()
+            prefs.launchAtLogin = initial
+        }
+
+        prefs.launchAtLogin = true
+        // Template not present in test env — falls back gracefully (templateNotFound path)
+        prefs.reconcileLaunchAtLogin()
+    }
+
     // MARK: - PreferencesWindowController Tests
 
     @MainActor

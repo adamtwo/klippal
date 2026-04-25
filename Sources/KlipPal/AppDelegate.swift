@@ -15,6 +15,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         AppDelegate.shared = self
         print("KlipPal starting...")
 
+        // Ensure only one launch-at-login mechanism is active (cleans up any
+        // duplicate registrations left by older code that mixed LaunchAgent + SMAppService).
+        PreferencesManager.shared.reconcileLaunchAtLogin()
+
         // Request accessibility permissions if not already granted
         let trusted = AXIsProcessTrusted()
         if !trusted {

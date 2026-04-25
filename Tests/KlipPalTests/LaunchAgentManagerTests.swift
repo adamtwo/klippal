@@ -140,6 +140,58 @@ final class LaunchAgentManagerTests: XCTestCase {
         XCTAssertFalse(manager.isInstalled)
     }
 
+    // MARK: - Duplicate-launch regression
+
+    // Before the fix, PreferencesManager.updateLaunchAtLogin() called install() without
+    // first calling uninstall(). If a LaunchAgent plist was already loaded AND SMAppService
+    // was also registered, both mechanisms fired on login, starting two instances.
+    // The fix always calls uninstall() before install(), ensuring a single load per cycle.
+
+    func testInstallCalledTwiceWithoutCleanupCallsLoadTwice() throws {
+        var loadCallCount = 0
+        let manager = makeManager(shell: { _, args in
+            if args.first == "load" { loadCallCount += 1 }
+            return 0
+        })
+
+        try manager.install()
+        try manager.install()  // second call without uninstall — the pre-fix bug pattern
+
+        XCTAssertEqual(loadCallCount, 2, "Without cleanup, install() calls launchctl load each time")
+    }
+
+    func testUninstallBeforeReinstallCallsLoadOnce() throws {
+        var loadCallCount = 0
+        let manager = makeManager(shell: { _, args in
+            if args.first == "load" { loadCallCount += 1 }
+            return 0
+        })
+
+        try manager.install()
+        try manager.uninstall()
+        try manager.install()  // the fixed pattern: always uninstall first
+
+        XCTAssertEqual(loadCallCount, 2, "Each install() after uninstall() calls load exactly once")
+    }
+
+    func testUninstallBeforeInstallNeverLeavesStaleLoadedAgent() throws {
+        var commands: [(String, String)] = []  // (verb, path)
+        let manager = makeManager(shell: { _, args in
+            if let verb = args.first, let path = args.last {
+                commands.append((verb, path))
+            }
+            return 0
+        })
+
+        try manager.install()
+        try manager.uninstall()
+        try manager.install()
+
+        // Sequence must be: load, unload, load — never two consecutive loads
+        let verbs = commands.map { $0.0 }
+        XCTAssertEqual(verbs, ["load", "unload", "load"])
+    }
+
     // MARK: - Helpers
 
     private func makeManager(
