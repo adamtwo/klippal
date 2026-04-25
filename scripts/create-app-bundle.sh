@@ -54,6 +54,9 @@ if [ -f "Sources/${APP_NAME}/Resources/AppIcon.icns" ]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "${BUNDLE_DIR}/Contents/Info.plist"
 fi
 
+# Copy LaunchAgent template so the in-app toggle can install it
+cp "Sources/${APP_NAME}/Resources/com.klippal.app.plist" "${BUNDLE_DIR}/Contents/MacOS/"
+
 echo "Created ${BUNDLE_DIR}"
 echo "  Version: ${VERSION}"
 echo "  Architecture: ${ARCH:-native}"

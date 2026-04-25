@@ -152,29 +152,47 @@ final class PreferencesManager: ObservableObject {
 
     // MARK: - Launch at Login
 
+    private let launchAgent = LaunchAgentManager()
+
     private func updateLaunchAtLogin() {
+        do {
+            if launchAtLogin {
+                try launchAgent.install()
+                print("✅ Registered for launch at login")
+            } else {
+                try launchAgent.uninstall()
+                print("✅ Unregistered from launch at login")
+            }
+        } catch LaunchAgentError.templateNotFound {
+            print("⚠️ LaunchAgent template not found, falling back to SMAppService")
+            updateViaSMAppService()
+        } catch {
+            print("⚠️ Failed to update launch at login: \(error)")
+        }
+    }
+
+    private func updateViaSMAppService() {
         if #available(macOS 13.0, *) {
             do {
                 if launchAtLogin {
                     try SMAppService.mainApp.register()
-                    print("✅ Registered for launch at login")
                 } else {
                     try SMAppService.mainApp.unregister()
-                    print("✅ Unregistered from launch at login")
                 }
             } catch {
-                print("⚠️ Failed to update launch at login: \(error)")
+                print("⚠️ SMAppService fallback failed: \(error)")
             }
-        } else {
-            print("⚠️ Launch at login requires macOS 13+")
         }
     }
 
     /// Check current launch at login status from system
     func refreshLaunchAtLoginStatus() {
+        if launchAgent.isInstalled {
+            launchAtLogin = true
+            return
+        }
         if #available(macOS 13.0, *) {
-            let status = SMAppService.mainApp.status
-            launchAtLogin = (status == .enabled)
+            launchAtLogin = (SMAppService.mainApp.status == .enabled)
         }
     }
 
