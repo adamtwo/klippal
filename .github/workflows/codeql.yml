@@ -1,0 +1,60 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 12 * * 1"  # Weekly on Monday at noon UTC
+  workflow_dispatch:
+
+permissions:
+  security-events: write
+  contents: read
+  actions: read
+
+jobs:
+  analyze-swift:
+    name: Analyze (swift)
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: swift
+          queries: security-and-quality
+
+      - name: Cache SPM build artifacts
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: codeql-spm-${{ runner.os }}-${{ hashFiles('Package.swift') }}
+          restore-keys: codeql-spm-${{ runner.os }}-
+
+      - name: Build
+        run: swift build
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: swift
+
+  analyze-actions:
+    name: Analyze (actions)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: actions
+          queries: security-and-quality
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: actions
