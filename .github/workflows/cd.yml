@@ -32,7 +32,7 @@ jobs:
         arch: [arm64, x86_64]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Show Swift version
         run: swift --version
@@ -58,7 +58,7 @@ jobs:
     needs: build
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0  # Need full history for changelog generation
 
