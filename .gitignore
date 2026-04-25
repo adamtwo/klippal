@@ -57,6 +57,7 @@ blobs/
 *.sublime-project
 .vscode/
 .history/
+*.code-workspace
 
 # Temporary files
 *.tmp
