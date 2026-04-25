@@ -8,7 +8,7 @@ final class LaunchAgentManagerTests: XCTestCase {
     private var templateFile: URL!
     private var fakeBinary: URL!
 
-    override func setUp() throws {
+    override func setUpWithError() throws {
         tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("LaunchAgentTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -28,7 +28,7 @@ final class LaunchAgentManagerTests: XCTestCase {
         )
     }
 
-    override func tearDown() throws {
+    override func tearDownWithError() throws {
         try? FileManager.default.removeItem(at: tempDir)
     }
 

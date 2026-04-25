@@ -86,7 +86,7 @@ final class LaunchAgentManager {
     }
 }
 
-enum LaunchAgentError: Error, LocalizedError {
+enum LaunchAgentError: Error, LocalizedError, Equatable {
     case templateNotFound
     case launchctlFailed(Int32)
 
