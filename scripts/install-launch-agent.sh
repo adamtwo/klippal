@@ -43,7 +43,9 @@ fi
 
 # --- Write plist with correct binary path ---
 mkdir -p "$HOME/Library/LaunchAgents"
-sed "s|KLIPPAL_BINARY_PATH|$BINARY|g" "$PLIST_SRC" > "$PLIST_DST"
+sed -e "s|KLIPPAL_BINARY_PATH|$BINARY|g" \
+    -e "s|KLIPPAL_RUN_AT_LOAD|<true/>|g" \
+    "$PLIST_SRC" > "$PLIST_DST"
 
 # --- Load and start ---
 launchctl load "$PLIST_DST"
