@@ -1,12 +1,18 @@
 import AppKit
 import SwiftUI
 
+private class PreferencesWindow: NSWindow {
+    override func cancelOperation(_ sender: Any?) {
+        close()
+    }
+}
+
 /// Window controller for the preferences window
 class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     static var shared: PreferencesWindowController?
 
     convenience init(initialCategory: SettingsCategory = .general) {
-        let window = NSWindow(
+        let window = PreferencesWindow(
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,

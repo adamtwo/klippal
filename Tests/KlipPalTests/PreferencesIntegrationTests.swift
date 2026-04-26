@@ -88,6 +88,18 @@ final class PreferencesIntegrationTests: XCTestCase {
         XCTAssertTrue(styleMask.contains(.closable), "Window should be closable")
     }
 
+    // MARK: - Keyboard Tests
+
+    @MainActor
+    func testEscapeKeyClosesPreferencesWindow() async throws {
+        let controller = PreferencesWindowController(initialCategory: .general)
+        XCTAssertNotNil(controller.window, "Window should exist")
+
+        controller.window?.cancelOperation(nil)
+
+        XCTAssertFalse(controller.window?.isVisible ?? false, "Window should be closed after cancelOperation")
+    }
+
     // MARK: - Window Visibility Tests
 
     @MainActor
