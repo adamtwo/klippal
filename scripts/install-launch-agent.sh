@@ -36,10 +36,10 @@ echo "Installing KlipPal LaunchAgent..."
 echo "  Binary: $BINARY"
 echo "  Plist:  $PLIST_DST"
 
-# --- Unload existing agent if running ---
-if launchctl list "$LABEL" &>/dev/null; then
-    launchctl unload "$PLIST_DST" 2>/dev/null || true
-fi
+# --- Kill any running instance and unload the agent ---
+# pkill first: launchctl unload does not reliably SIGTERM the process on macOS 26+
+pkill -x KlipPal 2>/dev/null || true
+launchctl unload "$PLIST_DST" 2>/dev/null || true
 
 # --- Write plist with correct binary path ---
 mkdir -p "$HOME/Library/LaunchAgents"
