@@ -48,30 +48,28 @@ final class LaunchAgentManager {
         FileManager.default.fileExists(atPath: plistDestination.path)
     }
 
-    func install() throws {
+    func install(runAtLoad: Bool = true) throws {
         guard let templatePath = templateProvider(),
               let template = try? String(contentsOfFile: templatePath) else {
             throw LaunchAgentError.templateNotFound
         }
 
-        let plistContent = template.replacingOccurrences(
-            of: "KLIPPAL_BINARY_PATH",
-            with: executableURL.path
-        )
+        let plistContent = template
+            .replacingOccurrences(of: "KLIPPAL_BINARY_PATH", with: executableURL.path)
+            .replacingOccurrences(of: "KLIPPAL_RUN_AT_LOAD", with: runAtLoad ? "<true/>" : "<false/>")
 
         let dir = plistDestination.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try plistContent.write(to: plistDestination, atomically: true, encoding: .utf8)
-
-        let exitCode = shell("/bin/launchctl", ["load", plistDestination.path])
-        if exitCode != 0 {
-            throw LaunchAgentError.launchctlFailed(exitCode)
-        }
+        // Do NOT call `launchctl load` here — launchd picks up the plist at next login.
+        // Loading immediately with RunAtLoad=true would spawn a duplicate instance while
+        // the app is already running.
     }
 
     func uninstall() throws {
         guard isInstalled else { return }
-        _ = shell("/bin/launchctl", ["unload", plistDestination.path])
+        // Remove the label from the current launchd session (best-effort; ignore errors).
+        _ = shell("/bin/launchctl", ["remove", LaunchAgentManager.label])
         try FileManager.default.removeItem(at: plistDestination)
     }
 
@@ -88,14 +86,11 @@ final class LaunchAgentManager {
 
 enum LaunchAgentError: Error, LocalizedError, Equatable {
     case templateNotFound
-    case launchctlFailed(Int32)
 
     var errorDescription: String? {
         switch self {
         case .templateNotFound:
             return "LaunchAgent plist template not found next to the KlipPal binary"
-        case .launchctlFailed(let code):
-            return "launchctl exited with code \(code)"
         }
     }
 }
