@@ -242,7 +242,7 @@ struct AboutView: View {
                 .padding(.horizontal, 40)
 
             VStack(spacing: 8) {
-                Text("Copyright 2025 KlipPal. All rights reserved.")
+                Text("Copyright \(String(Calendar.current.component(.year, from: Date()))) KlipPal. All rights reserved.")
                     .font(.caption)
                     .foregroundColor(.secondary)
 

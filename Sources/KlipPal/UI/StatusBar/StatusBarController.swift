@@ -2,6 +2,13 @@ import AppKit
 import SwiftUI
 import Combine
 
+private class NoImageMenuItem: NSMenuItem {
+    override var image: NSImage? {
+        get { nil }
+        set {}
+    }
+}
+
 /// Manages the menu bar status item
 /// Note: This class intentionally does NOT use @MainActor because NSMenu action dispatch
 /// doesn't work well with MainActor isolation. Instead, we dispatch to main manually where needed.
@@ -100,13 +107,13 @@ class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem.separator())
 
         // About item
-        let aboutItem = NSMenuItem(title: "About KlipPal", action: #selector(openAbout), keyEquivalent: "")
+        let aboutItem = NoImageMenuItem(title: "About KlipPal", action: #selector(openAbout), keyEquivalent: "")
         aboutItem.target = self
         aboutItem.isEnabled = true
         menu.addItem(aboutItem)
 
         // Quit item - use NSApp.terminate which always works
-        let quitItem = NSMenuItem(title: "Quit KlipPal", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quitItem = NoImageMenuItem(title: "Quit KlipPal", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quitItem.target = nil  // nil target sends to first responder / NSApp
         quitItem.isEnabled = true
         menu.addItem(quitItem)
