@@ -167,7 +167,7 @@ final class PreferencesManager: ObservableObject {
         }
 
         do {
-            try launchAgent.install()
+            try launchAgent.install(runAtLoad: launchAtLogin)
             print("✅ Registered for launch at login via LaunchAgent")
         } catch LaunchAgentError.templateNotFound {
             print("⚠️ LaunchAgent template not found, falling back to SMAppService")

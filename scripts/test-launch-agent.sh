@@ -54,8 +54,10 @@ assert "plist created in LaunchAgents" test -f "$PLIST"
 # Test: plist contains correct binary path
 assert "plist contains binary path" grep -q "$FAKE_BIN" "$PLIST"
 
-# Test: placeholder replaced
+# Test: placeholders replaced
 assert_not "placeholder KLIPPAL_BINARY_PATH not present" grep -q "KLIPPAL_BINARY_PATH" "$PLIST"
+assert_not "placeholder KLIPPAL_RUN_AT_LOAD not present" grep -q "KLIPPAL_RUN_AT_LOAD" "$PLIST"
+assert "RunAtLoad set to true" grep -q "<true/>" "$PLIST"
 
 # Test: launchctl knows about it
 assert "launchctl lists agent" launchctl list "$LABEL"

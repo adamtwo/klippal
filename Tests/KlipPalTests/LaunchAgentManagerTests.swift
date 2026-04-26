@@ -56,6 +56,24 @@ final class LaunchAgentManagerTests: XCTestCase {
         XCTAssertFalse(contents.contains("KLIPPAL_BINARY_PATH"), "Placeholder should be replaced")
     }
 
+    func testInstallWritesRunAtLoadTrueWhenEnabled() throws {
+        let manager = makeManager()
+        try manager.install(runAtLoad: true)
+
+        let contents = try String(contentsOf: plistDest)
+        XCTAssertTrue(contents.contains("<true/>"), "RunAtLoad should be true when preference is enabled")
+        XCTAssertFalse(contents.contains("KLIPPAL_RUN_AT_LOAD"), "Placeholder should be replaced")
+    }
+
+    func testInstallWritesRunAtLoadFalseWhenDisabled() throws {
+        let manager = makeManager()
+        try manager.install(runAtLoad: false)
+
+        let contents = try String(contentsOf: plistDest)
+        XCTAssertTrue(contents.contains("<false/>"), "RunAtLoad should be false when preference is disabled")
+        XCTAssertFalse(contents.contains("KLIPPAL_RUN_AT_LOAD"), "Placeholder should be replaced")
+    }
+
     func testInstallCreatesMissingLaunchAgentsDirectory() throws {
         // Use a destination inside a not-yet-created subdirectory
         let nestedDest = tempDir
@@ -80,28 +98,16 @@ final class LaunchAgentManagerTests: XCTestCase {
         }
     }
 
-    func testInstallCallsLaunchctlLoad() throws {
-        var capturedArgs: [String] = []
-        let manager = makeManager(shell: { _, args in
-            capturedArgs = args
+    func testInstallDoesNotCallLaunchctl() throws {
+        var shellCallCount = 0
+        let manager = makeManager(shell: { _, _ in
+            shellCallCount += 1
             return 0
         })
 
         try manager.install()
 
-        XCTAssertEqual(capturedArgs.first, "load")
-        XCTAssertEqual(capturedArgs.last, plistDest.path)
-    }
-
-    func testInstallThrowsWhenLaunchctlFails() {
-        let manager = makeManager(shell: { _, _ in 1 })
-        XCTAssertThrowsError(try manager.install()) { error in
-            if case LaunchAgentError.launchctlFailed(let code) = error as! LaunchAgentError {
-                XCTAssertEqual(code, 1)
-            } else {
-                XCTFail("Expected launchctlFailed error")
-            }
-        }
+        XCTAssertEqual(shellCallCount, 0, "install() must not call launchctl — starting the agent immediately would spawn a duplicate if the app is already running")
     }
 
     // MARK: - uninstall
@@ -113,19 +119,20 @@ final class LaunchAgentManagerTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: plistDest.path))
     }
 
-    func testUninstallCallsLaunchctlUnload() throws {
+    func testUninstallCallsLaunchctlRemove() throws {
+        var capturedExe: String = ""
         var capturedArgs: [String] = []
-        var callCount = 0
-        let manager = makeManager(shell: { _, args in
-            callCount += 1
-            if callCount == 2 { capturedArgs = args }  // second call is unload
+        let manager = makeManager(shell: { exe, args in
+            capturedExe = exe
+            capturedArgs = args
             return 0
         })
 
         try manager.install()
         try manager.uninstall()
 
-        XCTAssertEqual(capturedArgs.first, "unload")
+        XCTAssertTrue(capturedExe.hasSuffix("launchctl"))
+        XCTAssertEqual(capturedArgs, ["remove", LaunchAgentManager.label])
     }
 
     func testUninstallIsNoOpWhenNotInstalled() {
@@ -142,12 +149,11 @@ final class LaunchAgentManagerTests: XCTestCase {
 
     // MARK: - Duplicate-launch regression
 
-    // Before the fix, PreferencesManager.updateLaunchAtLogin() called install() without
-    // first calling uninstall(). If a LaunchAgent plist was already loaded AND SMAppService
-    // was also registered, both mechanisms fired on login, starting two instances.
-    // The fix always calls uninstall() before install(), ensuring a single load per cycle.
+    // install() must NOT call launchctl load. If it did, launchd would start a second
+    // instance immediately whenever the user toggles the preference while the app is running.
+    // The plist is written to ~/Library/LaunchAgents so launchd picks it up at next login.
 
-    func testInstallCalledTwiceWithoutCleanupCallsLoadTwice() throws {
+    func testInstallCalledTwiceNeverCallsLaunchctlLoad() throws {
         var loadCallCount = 0
         let manager = makeManager(shell: { _, args in
             if args.first == "load" { loadCallCount += 1 }
@@ -155,31 +161,29 @@ final class LaunchAgentManagerTests: XCTestCase {
         })
 
         try manager.install()
-        try manager.install()  // second call without uninstall — the pre-fix bug pattern
+        try manager.install()
 
-        XCTAssertEqual(loadCallCount, 2, "Without cleanup, install() calls launchctl load each time")
+        XCTAssertEqual(loadCallCount, 0, "install() must never call launchctl load to avoid spawning a duplicate instance")
     }
 
-    func testUninstallBeforeReinstallCallsLoadOnce() throws {
-        var loadCallCount = 0
+    func testUninstallBeforeReinstallOnlyCallsRemoveOnce() throws {
+        var commands: [String] = []
         let manager = makeManager(shell: { _, args in
-            if args.first == "load" { loadCallCount += 1 }
+            if let verb = args.first { commands.append(verb) }
             return 0
         })
 
         try manager.install()
         try manager.uninstall()
-        try manager.install()  // the fixed pattern: always uninstall first
+        try manager.install()
 
-        XCTAssertEqual(loadCallCount, 2, "Each install() after uninstall() calls load exactly once")
+        XCTAssertEqual(commands, ["remove"], "Only uninstall() should touch launchctl, with a single remove call")
     }
 
     func testUninstallBeforeInstallNeverLeavesStaleLoadedAgent() throws {
-        var commands: [(String, String)] = []  // (verb, path)
+        var commands: [String] = []
         let manager = makeManager(shell: { _, args in
-            if let verb = args.first, let path = args.last {
-                commands.append((verb, path))
-            }
+            if let verb = args.first { commands.append(verb) }
             return 0
         })
 
@@ -187,9 +191,8 @@ final class LaunchAgentManagerTests: XCTestCase {
         try manager.uninstall()
         try manager.install()
 
-        // Sequence must be: load, unload, load — never two consecutive loads
-        let verbs = commands.map { $0.0 }
-        XCTAssertEqual(verbs, ["load", "unload", "load"])
+        XCTAssertFalse(commands.contains("load"), "install() must never call launchctl load")
+        XCTAssertEqual(commands.filter { $0 == "remove" }.count, 1, "uninstall() calls remove exactly once")
     }
 
     // MARK: - Helpers
@@ -218,7 +221,7 @@ final class LaunchAgentManagerTests: XCTestCase {
             <string>KLIPPAL_BINARY_PATH</string>
         </array>
         <key>RunAtLoad</key>
-        <true/>
+        KLIPPAL_RUN_AT_LOAD
     </dict>
     </plist>
     """
