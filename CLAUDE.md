@@ -394,6 +394,8 @@ brew install --cask adamtwo/klippal/klippal
 - [ ] CPU profiling (ensure <1% idle)
 - [ ] Update Homebrew cask formula with new version
 
+Always use the CD pipeline to release
+
 ## Documentation References
 
 - **README.md** - User-facing documentation
