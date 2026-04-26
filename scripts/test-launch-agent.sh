@@ -28,21 +28,32 @@ INSTALL="$SCRIPT_DIR/install-launch-agent.sh"
 UNINSTALL="$SCRIPT_DIR/uninstall-launch-agent.sh"
 PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
 
-# --- Setup: create a no-op fake binary ---
+# --- Setup: compile a minimal fake binary (must be a real Mach-O so pkill -x KlipPal matches it) ---
+# A shell script won't work because the OS shows its name as '/bin/sh', not 'KlipPal'.
+# A copied Apple binary goes into uninterruptible UE state due to code-signing checks.
+# A self-compiled binary has neither issue.
 TMPDIR_TEST="$(mktemp -d)"
 FAKE_BIN="$TMPDIR_TEST/KlipPal"
-printf '#!/bin/sh\nsleep 3600\n' > "$FAKE_BIN"
-chmod +x "$FAKE_BIN"
+cat > "$TMPDIR_TEST/fake.c" << 'EOF'
+#include <unistd.h>
+int main(void) { while (1) sleep(1); return 0; }
+EOF
+cc -o "$FAKE_BIN" "$TMPDIR_TEST/fake.c" 2>/dev/null \
+    || { echo "SKIP: cc not available, skipping process-kill tests"; FAKE_BIN=""; }
 
 cleanup() {
     launchctl unload "$PLIST" 2>/dev/null || true
     rm -f "$PLIST"
     rm -rf "$TMPDIR_TEST"
-    pkill -f "sleep 3600" 2>/dev/null || true
+    pkill -x KlipPal 2>/dev/null || true
 }
 trap cleanup EXIT
 
 echo "=== install-launch-agent.sh tests ==="
+
+if [ -z "${FAKE_BIN:-}" ]; then
+    echo "  SKIP: cc not available, skipping install tests"
+else
 
 # Clean state
 rm -f "$PLIST"
@@ -62,6 +73,8 @@ assert "RunAtLoad set to true" grep -q "<true/>" "$PLIST"
 # Test: launchctl knows about it
 assert "launchctl lists agent" launchctl list "$LABEL"
 
+fi
+
 echo ""
 echo "=== uninstall-launch-agent.sh tests ==="
 
@@ -72,6 +85,28 @@ assert_not "launchctl no longer lists agent" launchctl list "$LABEL"
 # Test: uninstall is idempotent
 "$UNINSTALL" &>/dev/null
 assert "second uninstall does not error" true
+
+echo ""
+echo "=== install kills existing KlipPal instance (duplicate-launch regression) ==="
+
+if [ -z "${FAKE_BIN:-}" ]; then
+    echo "  SKIP: cc not available"
+else
+    # Simulate an already-running KlipPal (upgrade scenario: old instance survived launchctl unload)
+    "$FAKE_BIN" &
+    STALE_PID=$!
+    sleep 0.2  # Let it settle into a killable sleep state
+
+    assert "stale KlipPal is running before install" kill -0 "$STALE_PID"
+
+    "$INSTALL" "$FAKE_BIN" &>/dev/null
+    sleep 0.5  # Allow SIGTERM to be delivered
+
+    assert_not "stale KlipPal killed after install" kill -0 "$STALE_PID"
+
+    launchctl unload "$PLIST" 2>/dev/null || true
+    rm -f "$PLIST"
+fi
 
 echo ""
 echo "=== install with no binary argument ==="
