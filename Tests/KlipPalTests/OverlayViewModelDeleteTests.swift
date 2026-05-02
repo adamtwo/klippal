@@ -52,11 +52,7 @@ final class OverlayViewModelDeleteTests: XCTestCase {
         XCTAssertEqual(viewModel.items.count, 2)
         XCTAssertEqual(viewModel.filteredItems.count, 2)
 
-        // Delete item2
-        viewModel.deleteItem(item2)
-
-        // Wait for async delete
-        try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+        await viewModel.deleteItemAsync(item2)
 
         // Verify item is removed from view model
         XCTAssertEqual(viewModel.items.count, 1)
@@ -89,12 +85,9 @@ final class OverlayViewModelDeleteTests: XCTestCase {
         // Set selected index to last item
         viewModel.selectedIndex = 4
 
-        // Delete the last item
         if let lastItem = viewModel.filteredItems.last {
-            viewModel.deleteItem(lastItem)
+            await viewModel.deleteItemAsync(lastItem)
         }
-
-        try await Task.sleep(nanoseconds: 100_000_000)
 
         // Selected index should be adjusted to stay in bounds
         XCTAssertEqual(viewModel.filteredItems.count, 4)
@@ -132,12 +125,9 @@ final class OverlayViewModelDeleteTests: XCTestCase {
         // Should have 2 items in filtered list
         XCTAssertEqual(viewModel.filteredItems.count, 2)
 
-        // Delete one of the filtered items
         if let appleItem = viewModel.filteredItems.first(where: { $0.content == "Apple pie" }) {
-            viewModel.deleteItem(appleItem)
+            await viewModel.deleteItemAsync(appleItem)
         }
-
-        try await Task.sleep(nanoseconds: 100_000_000)
 
         // Verify deletion from both items and filteredItems
         XCTAssertEqual(viewModel.items.count, 2)
@@ -158,9 +148,7 @@ final class OverlayViewModelDeleteTests: XCTestCase {
         try await Task.sleep(nanoseconds: 100_000_000)
 
         viewModel.selectedIndex = 0
-        viewModel.deleteItem(item)
-
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await viewModel.deleteItemAsync(item)
 
         // With no items, selected index should be 0
         XCTAssertEqual(viewModel.filteredItems.count, 0)

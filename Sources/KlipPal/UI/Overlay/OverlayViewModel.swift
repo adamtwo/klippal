@@ -415,22 +415,22 @@ class OverlayViewModel: ObservableObject {
 
     /// Delete an item from history
     func deleteItem(_ item: ClipboardItem) {
-        Task {
-            do {
-                try await storage.delete(item)
-                print("Deleted item: \(item.content.prefix(50))...")
+        Task { await deleteItemAsync(item) }
+    }
 
-                // Remove from local arrays
-                items.removeAll { $0.id == item.id }
-                filteredItems.removeAll { $0.id == item.id }
+    func deleteItemAsync(_ item: ClipboardItem) async {
+        do {
+            try await storage.delete(item)
+            print("Deleted item: \(item.content.prefix(50))...")
 
-                // Adjust selected index if needed
-                if selectedIndex >= filteredItems.count {
-                    selectedIndex = max(0, filteredItems.count - 1)
-                }
-            } catch {
-                print("Failed to delete item: \(error)")
+            items.removeAll { $0.id == item.id }
+            filteredItems.removeAll { $0.id == item.id }
+
+            if selectedIndex >= filteredItems.count {
+                selectedIndex = max(0, filteredItems.count - 1)
             }
+        } catch {
+            print("Failed to delete item: \(error)")
         }
     }
 
