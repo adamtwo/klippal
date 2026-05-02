@@ -1,4 +1,5 @@
 name: CD
+run-name: "CD v${{ inputs.version }} (${{ inputs.dryrun && 'dry run' || 'release' }})"
 
 on:
   workflow_dispatch:
