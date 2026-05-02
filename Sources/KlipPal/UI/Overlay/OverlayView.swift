@@ -208,17 +208,20 @@ struct OverlayView: View {
 
             // Footer
             HStack(spacing: 12) {
-                // Item count with icon
-                HStack(spacing: 4) {
-                    Image(systemName: "list.bullet")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    Text("\(viewModel.filteredItems.count) items")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                // Item count with icon — click to open Storage preferences
+                Button(action: { viewModel.openPreferences(category: .storage) }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "list.bullet")
+                            .font(.caption2)
+                        Text("\(viewModel.filteredItems.count) items")
+                            .font(.caption)
+                    }
+                    .foregroundColor(.secondary)
                 }
+                .buttonStyle(.plain)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("\(viewModel.filteredItems.count) clipboard items")
+                .accessibilityHint("Opens Storage preferences")
 
                 Spacer()
 
